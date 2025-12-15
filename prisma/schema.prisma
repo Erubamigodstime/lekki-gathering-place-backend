@@ -1,0 +1,280 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AttendanceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ClassStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+// Models
+model User {
+  id                String             @id @default(uuid())
+  email             String             @unique
+  password          String
+  firstName         String
+  lastName          String
+  phone             String
+  role              UserRole
+  status            UserStatus         @default(ACTIVE)
+  profilePicture    String?
+  googleId          String?            @unique
+  emailVerified     Boolean            @default(false)
+  resetPasswordToken String?
+  resetPasswordExpires DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relations
+  wardId            String
+  ward              Ward               @relation(fields: [wardId], references: [id])
+  
+  // Role-specific relations
+  instructorProfile Instructor?
+  studentProfile    Student?
+  
+  // Activity relations
+  createdClasses    Class[]            @relation("ClassCreator")
+  notifications     Notification[]
+  sessions          Session[]
+  
+  @@index([email])
+  @@index([role])
+  @@index([wardId])
+  @@map("users")
+}
+
+model Ward {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  users       User[]
+  classes     Class[]
+  
+  @@map("wards")
+}
+
+model Instructor {
+  id                  String          @id @default(uuid())
+  userId              String          @unique
+  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  skills              String[]        // Array of skills
+  bio                 String?
+  experience          Int?            // Years of experience
+  approvalStatus      ApprovalStatus  @default(PENDING)
+  documents           String[]        // URLs to uploaded documents
+  availabilityCalendar Json?          // Store availability as JSON
+  
+  approvedAt          DateTime?
+  approvedBy          String?
+  rejectedAt          DateTime?
+  rejectionReason     String?
+  
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  
+  // Relations
+  classes             Class[]
+  attendanceApprovals Attendance[]    @relation("ApprovedBy")
+  
+  @@index([approvalStatus])
+  @@map("instructors")
+}
+
+model Student {
+  id                 String       @id @default(uuid())
+  userId             String       @unique
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  dateOfBirth        DateTime?
+  emergencyContact   String?
+  emergencyPhone     String?
+  
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  
+  // Relations
+  enrollments        Enrollment[]
+  attendance         Attendance[]
+  
+  @@map("students")
+}
+
+model Class {
+  id               String        @id @default(uuid())
+  name             String
+  description      String
+  schedule         Json          // { days: string[], time: string }
+  maxCapacity      Int
+  status           ClassStatus   @default(ACTIVE)
+  thumbnail        String?
+  
+  // Relations
+  instructorId     String
+  instructor       Instructor    @relation(fields: [instructorId], references: [id])
+  
+  wardId           String
+  ward             Ward          @relation(fields: [wardId], references: [id])
+  
+  createdById      String
+  createdBy        User          @relation("ClassCreator", fields: [createdById], references: [id])
+  
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  
+  // Relations
+  enrollments      Enrollment[]
+  attendance       Attendance[]
+  
+  @@index([instructorId])
+  @@index([wardId])
+  @@index([status])
+  @@map("classes")
+}
+
+model Enrollment {
+  id               String          @id @default(uuid())
+  
+  // Relations
+  classId          String
+  class            Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  studentId        String
+  student          Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  status           ApprovalStatus  @default(PENDING)
+  enrolledAt       DateTime        @default(now())
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  completedAt      DateTime?
+  
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  
+  @@unique([classId, studentId])
+  @@index([studentId])
+  @@index([status])
+  @@map("enrollments")
+}
+
+model Attendance {
+  id                     String           @id @default(uuid())
+  
+  // Relations
+  classId                String
+  class                  Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  studentId              String
+  student                Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  date                   DateTime         @default(now())
+  status                 AttendanceStatus @default(PENDING)
+  
+  markedAt               DateTime         @default(now())
+  approvedAt             DateTime?
+  rejectedAt             DateTime?
+  rejectionReason        String?
+  
+  approvedByInstructorId String?
+  approvedByInstructor   Instructor?      @relation("ApprovedBy", fields: [approvedByInstructorId], references: [id])
+  
+  notes                  String?
+  
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  
+  @@unique([classId, studentId, date])
+  @@index([studentId])
+  @@index([status])
+  @@index([date])
+  @@map("attendance")
+}
+
+model Notification {
+  id        String            @id @default(uuid())
+  
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title     String
+  message   String
+  type      NotificationType  @default(INFO)
+  read      Boolean           @default(false)
+  data      Json?             // Additional data
+  
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  
+  @@index([userId, read])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([refreshToken])
+  @@map("sessions")
+}
