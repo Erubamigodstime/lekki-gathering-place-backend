@@ -23,8 +23,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const { status } = req.query;
 
+    console.log('GET /instructors called with status:', status);
+
     const where: any = {};
     if (status) where.approvalStatus = status;
+
+    console.log('Query where clause:', where);
 
     const instructors = await prisma.instructor.findMany({
       where,
@@ -50,7 +54,83 @@ router.get(
       orderBy: { createdAt: 'desc' },
     });
 
+    console.log('Found instructors:', instructors.length);
+    console.log('Instructor details:', instructors.map(i => ({
+      id: i.id,
+      name: `${i.user.firstName} ${i.user.lastName}`,
+      approvalStatus: i.approvalStatus
+    })));
+
     ResponseUtil.success(res, 'Instructors retrieved successfully', instructors);
+  })
+);
+
+/**
+ * @swagger
+ * /instructors/profile:
+ *   get:
+ *     summary: Get current instructor's profile
+ *     tags: [Instructors]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/profile',
+  authenticate,
+  authorize(UserRole.INSTRUCTOR),
+  asyncHandler(async (req, res) => {
+    const userId = req.user!.id;
+
+    console.log('Fetching instructor profile for userId:', userId);
+
+    const instructor = await prisma.instructor.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            profilePicture: true,
+            wardId: true,
+            ward: true,
+          },
+        },
+        classes: {
+          include: {
+            ward: true,
+            _count: {
+              select: {
+                enrollments: {
+                  where: { status: 'APPROVED' },
+                },
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            classes: true,
+          },
+        },
+      },
+    });
+
+    if (!instructor) {
+      console.log('Instructor profile not found for userId:', userId);
+      return ResponseUtil.notFound(res, 'Instructor profile not found');
+    }
+
+    console.log('Instructor profile found:', {
+      id: instructor.id,
+      approvalStatus: instructor.approvalStatus,
+      classesCount: instructor.classes.length,
+      classes: instructor.classes.map(c => ({ id: c.id, name: c.name }))
+    });
+
+    ResponseUtil.success(res, 'Instructor profile retrieved successfully', instructor);
   })
 );
 

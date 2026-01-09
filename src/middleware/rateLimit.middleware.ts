@@ -11,7 +11,13 @@ export const apiLimiter = rateLimit({
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
-  message: 'Too many login attempts, please try again later.',
+  max: process.env.NODE_ENV === 'production' ? 5 : 50, // Higher limit for development
+  message: { 
+    success: false,
+    message: 'Too many login attempts, please try again later.',
+    error: 'RATE_LIMIT_EXCEEDED'
+  },
   skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
 });

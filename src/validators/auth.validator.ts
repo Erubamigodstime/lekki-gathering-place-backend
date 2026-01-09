@@ -13,6 +13,7 @@ export const registerValidation = [
   body('phone').trim().notEmpty().withMessage('Phone number is required'),
   body('role').isIn(Object.values(UserRole)).withMessage('Invalid role'),
   body('wardId').isUUID().withMessage('Valid ward ID is required'),
+  body('classId').optional().isUUID().withMessage('Valid class ID is required'),
 ];
 
 export const loginValidation = [

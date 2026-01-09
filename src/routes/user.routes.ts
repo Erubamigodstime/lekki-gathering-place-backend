@@ -5,6 +5,8 @@ import { UserRole } from '@prisma/client';
 import prisma from '@/config/database';
 import { ResponseUtil } from '@/utils/response.util';
 import { asyncHandler } from '@/middleware/error.middleware';
+import { upload } from '@/middleware/upload.middleware';
+import { uploadToCloudinary } from '@/config/cloudinary';
 
 const router = Router();
 
@@ -39,6 +41,137 @@ router.get(
     });
 
     ResponseUtil.success(res, 'Users retrieved successfully', users);
+  })
+);
+
+/**
+ * @swagger
+ * /users/profile:
+ *   get:
+ *     summary: Get my profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/profile',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.user!.id;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        profilePicture: true,
+        role: true,
+        status: true,
+        wardId: true,
+        ward: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        instructorProfile: true,
+        studentProfile: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user) {
+      return ResponseUtil.notFound(res, 'User not found');
+    }
+
+    ResponseUtil.success(res, 'Profile retrieved successfully', user);
+  })
+);
+
+/**
+ * @swagger
+ * /users/profile:
+ *   patch:
+ *     summary: Update my profile
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch(
+  '/profile',
+  authenticate,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.user!.id;
+    const { firstName, lastName, phone, profilePicture } = req.body;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        firstName,
+        lastName,
+        phone,
+        profilePicture,
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        profilePicture: true,
+        role: true,
+        wardId: true,
+        ward: true,
+      },
+    });
+
+    ResponseUtil.success(res, 'Profile updated successfully', user);
+  })
+);
+
+/**
+ * @swagger
+ * /users/profile/picture:
+ *   post:
+ *     summary: Upload profile picture
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  '/profile/picture',
+  authenticate,
+  upload.single('picture'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = req.user!.id;
+    const file = req.file;
+
+    if (!file) {
+      return ResponseUtil.badRequest(res, 'No image uploaded');
+    }
+
+    // Upload to Cloudinary
+    const result = await uploadToCloudinary(file, 'profile-pictures');
+
+    // Update user profile
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { profilePicture: result.url },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        profilePicture: true,
+        role: true,
+      },
+    });
+
+    ResponseUtil.success(res, 'Profile picture uploaded successfully', user);
   })
 );
 
@@ -88,47 +221,6 @@ router.get(
     }
 
     ResponseUtil.success(res, 'User retrieved successfully', user);
-  })
-);
-
-/**
- * @swagger
- * /users/profile:
- *   patch:
- *     summary: Update my profile
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- */
-router.patch(
-  '/profile',
-  authenticate,
-  asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user!.id;
-    const { firstName, lastName, phone, profilePicture } = req.body;
-
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        firstName,
-        lastName,
-        phone,
-        profilePicture,
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        phone: true,
-        profilePicture: true,
-        role: true,
-        wardId: true,
-        ward: true,
-      },
-    });
-
-    ResponseUtil.success(res, 'Profile updated successfully', user);
   })
 );
 

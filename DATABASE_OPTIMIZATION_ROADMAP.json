@@ -1,0 +1,811 @@
+{
+  "metadata": {
+    "title": "Database Performance Optimization Roadmap",
+    "created": "2026-01-09",
+    "project": "Lekki Gathering Place Backend",
+    "status": "pending",
+    "estimatedTotalImpact": "5-10x performance improvement"
+  },
+  "criticalIssues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Missing Database Indexes",
+      "severity": "CRITICAL",
+      "impact": "50-90% slower queries on filtered data",
+      "description": "Schema has basic indexes but missing critical composite indexes for common query patterns"
+    },
+    {
+      "id": "ISSUE-002",
+      "title": "N+1 Query Problems",
+      "severity": "SEVERE",
+      "impact": "10-100x slower depending on data size",
+      "description": "Multiple N+1 query anti-patterns causing excessive database roundtrips",
+      "locations": [
+        "src/services/submission.service.ts:118-140",
+        "src/services/grade.service.ts (enrollment points updates)"
+      ]
+    },
+    {
+      "id": "ISSUE-003",
+      "title": "No Pagination",
+      "severity": "CRITICAL",
+      "impact": "80-95% slower on large datasets, potential memory issues",
+      "description": "Many queries fetch unlimited records without pagination",
+      "locations": [
+        "src/services/message.service.ts",
+        "src/services/lesson.service.ts",
+        "src/services/grade.service.ts"
+      ]
+    },
+    {
+      "id": "ISSUE-004",
+      "title": "Deep Nested Includes",
+      "severity": "SEVERE",
+      "impact": "30-70% slower on detail endpoints",
+      "description": "Queries have deeply nested includes fetching entire object graphs (4+ levels)",
+      "locations": [
+        "src/controllers/weekProgress.controller.ts:162-170",
+        "src/services/submission.service.ts",
+        "src/services/assignment.service.ts"
+      ]
+    },
+    {
+      "id": "ISSUE-005",
+      "title": "No Query Caching",
+      "severity": "HIGH",
+      "impact": "90-99% faster on cacheable data",
+      "description": "Redis configured but not used for caching frequently accessed data"
+    },
+    {
+      "id": "ISSUE-006",
+      "title": "Sequential Queries",
+      "severity": "MEDIUM",
+      "impact": "2-3x slower than parallel queries",
+      "description": "Multiple queries executed sequentially instead of in parallel",
+      "locations": [
+        "src/controllers/weekProgress.controller.ts"
+      ]
+    },
+    {
+      "id": "ISSUE-007",
+      "title": "Missing Connection Pool Configuration",
+      "severity": "MEDIUM",
+      "impact": "20-40% better performance under load",
+      "description": "No explicit connection pooling settings configured"
+    },
+    {
+      "id": "ISSUE-008",
+      "title": "No Query Performance Monitoring",
+      "severity": "LOW",
+      "impact": "Prevents identifying slow queries",
+      "description": "No slow query tracking or performance metrics"
+    }
+  ],
+  "optimizations": {
+    "immediate": {
+      "priority": "🔥 IMMEDIATE",
+      "timeline": "This Week",
+      "tasks": [
+        {
+          "id": "OPT-001",
+          "title": "Add Missing Database Indexes",
+          "priority": "CRITICAL",
+          "estimatedTime": "2-3 hours",
+          "expectedImprovement": "50-90% faster on filtered queries",
+          "status": "pending",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Add composite indexes to schema.prisma",
+              "file": "prisma/schema.prisma",
+              "changes": [
+                {
+                  "model": "Enrollment",
+                  "indexes": [
+                    "@@index([classId, status])",
+                    "@@index([studentId, status])"
+                  ]
+                },
+                {
+                  "model": "Submission",
+                  "indexes": [
+                    "@@index([studentId, status])",
+                    "@@index([assignmentId, studentId])",
+                    "@@index([submittedAt])"
+                  ]
+                },
+                {
+                  "model": "Message",
+                  "indexes": [
+                    "@@index([classId, deletedAt])",
+                    "@@index([receiverId, readAt])",
+                    "@@index([senderId, createdAt])"
+                  ]
+                },
+                {
+                  "model": "WeekProgress",
+                  "indexes": [
+                    "@@index([studentId, completed])",
+                    "@@index([enrollmentId, completed])"
+                  ]
+                },
+                {
+                  "model": "Grade",
+                  "indexes": [
+                    "@@index([status, publishedAt])"
+                  ]
+                },
+                {
+                  "model": "Attendance",
+                  "indexes": [
+                    "@@index([classId, date, status])"
+                  ]
+                },
+                {
+                  "model": "Lesson",
+                  "indexes": [
+                    "@@index([classId, isPublished])"
+                  ]
+                }
+              ]
+            },
+            {
+              "step": 2,
+              "action": "Run migration",
+              "command": "npx prisma migrate dev --name add_performance_indexes"
+            },
+            {
+              "step": 3,
+              "action": "Test query performance before/after"
+            }
+          ]
+        },
+        {
+          "id": "OPT-002",
+          "title": "Fix N+1 Query in Submission Service",
+          "priority": "CRITICAL",
+          "estimatedTime": "3-4 hours",
+          "expectedImprovement": "10-100x faster",
+          "status": "pending",
+          "affectedFiles": [
+            "src/services/submission.service.ts"
+          ],
+          "implementation": {
+            "approach": "Replace groupBy + Promise.all with raw SQL using window functions",
+            "currentCode": "lines 118-140",
+            "solution": "Use DISTINCT ON or ROW_NUMBER() window function in PostgreSQL"
+          },
+          "steps": [
+            {
+              "step": 1,
+              "action": "Create optimized query using Prisma.$queryRaw",
+              "code": "const latestSubmissions = await prisma.$queryRaw`\n  SELECT DISTINCT ON (student_id) *\n  FROM submissions\n  WHERE assignment_id = ${assignmentId}\n  ORDER BY student_id, attempt_number DESC\n`"
+            },
+            {
+              "step": 2,
+              "action": "Add proper TypeScript typing for raw query result"
+            },
+            {
+              "step": 3,
+              "action": "Test with various assignment sizes"
+            }
+          ]
+        },
+        {
+          "id": "OPT-003",
+          "title": "Add Pagination to All List Endpoints",
+          "priority": "CRITICAL",
+          "estimatedTime": "4-6 hours",
+          "expectedImprovement": "80-95% faster on list endpoints",
+          "status": "pending",
+          "affectedFiles": [
+            "src/services/message.service.ts",
+            "src/services/lesson.service.ts",
+            "src/services/grade.service.ts",
+            "src/services/assignment.service.ts",
+            "src/services/submission.service.ts"
+          ],
+          "configuration": {
+            "DEFAULT_PAGE_SIZE": 20,
+            "MAX_PAGE_SIZE": 100,
+            "DEFAULT_PAGE": 1
+          },
+          "steps": [
+            {
+              "step": 1,
+              "action": "Create pagination utility if not exists",
+              "file": "src/utils/pagination.util.ts",
+              "note": "Already exists, verify it's being used consistently"
+            },
+            {
+              "step": 2,
+              "action": "Add pagination to message.service.ts methods",
+              "methods": [
+                "getInbox",
+                "getSent",
+                "getClassMessages",
+                "getConversation"
+              ]
+            },
+            {
+              "step": 3,
+              "action": "Add pagination to lesson.service.ts methods",
+              "methods": [
+                "getByClass"
+              ]
+            },
+            {
+              "step": 4,
+              "action": "Add pagination to grade.service.ts methods",
+              "methods": [
+                "getByStudent",
+                "getByClass"
+              ]
+            },
+            {
+              "step": 5,
+              "action": "Update API documentation with pagination parameters"
+            }
+          ]
+        },
+        {
+          "id": "OPT-004",
+          "title": "Implement Redis Caching Layer",
+          "priority": "CRITICAL",
+          "estimatedTime": "6-8 hours",
+          "expectedImprovement": "90-99% faster on cached data",
+          "status": "pending",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Create CacheService wrapper",
+              "file": "src/services/cache.service.ts",
+              "functionality": [
+                "getOrSet method",
+                "invalidate method",
+                "invalidatePattern method",
+                "TTL configuration"
+              ]
+            },
+            {
+              "step": 2,
+              "action": "Define cache strategies",
+              "strategies": {
+                "ward:list": "3600s (1 hour)",
+                "class:{id}": "900s (15 minutes)",
+                "user:{id}": "300s (5 minutes)",
+                "enrollment:count:{classId}": "60s (1 minute)",
+                "lessons:{classId}": "600s (10 minutes)"
+              }
+            },
+            {
+              "step": 3,
+              "action": "Implement cache warming for frequently accessed data"
+            },
+            {
+              "step": 4,
+              "action": "Add cache invalidation on write operations"
+            },
+            {
+              "step": 5,
+              "action": "Add cache hit/miss metrics"
+            }
+          ]
+        }
+      ]
+    },
+    "highPriority": {
+      "priority": "⚠️ HIGH PRIORITY",
+      "timeline": "Next 2 Weeks",
+      "tasks": [
+        {
+          "id": "OPT-005",
+          "title": "Optimize Nested Includes",
+          "priority": "HIGH",
+          "estimatedTime": "4-5 hours",
+          "expectedImprovement": "30-70% faster on detail endpoints",
+          "status": "pending",
+          "affectedFiles": [
+            "src/controllers/weekProgress.controller.ts",
+            "src/services/submission.service.ts",
+            "src/services/assignment.service.ts",
+            "src/routes/enrollment.routes.ts"
+          ],
+          "steps": [
+            {
+              "step": 1,
+              "action": "Audit all include statements for depth > 2 levels"
+            },
+            {
+              "step": 2,
+              "action": "Replace deep includes with specific selects",
+              "example": "Replace 'include: { user: true }' with 'select: { firstName: true, lastName: true }'"
+            },
+            {
+              "step": 3,
+              "action": "Create separate endpoints for related data when needed"
+            },
+            {
+              "step": 4,
+              "action": "Use GraphQL patterns (selective field fetching) if applicable"
+            }
+          ]
+        },
+        {
+          "id": "OPT-006",
+          "title": "Implement DataLoader for Batch Loading",
+          "priority": "HIGH",
+          "estimatedTime": "5-6 hours",
+          "expectedImprovement": "50-80% faster on repeated entity fetches",
+          "status": "pending",
+          "dependencies": [
+            "npm install dataloader"
+          ],
+          "steps": [
+            {
+              "step": 1,
+              "action": "Install dataloader package"
+            },
+            {
+              "step": 2,
+              "action": "Create dataloaders for common entities",
+              "entities": [
+                "User",
+                "Student",
+                "Instructor",
+                "Class",
+                "Enrollment"
+              ]
+            },
+            {
+              "step": 3,
+              "action": "Integrate with request context (per-request loaders)"
+            },
+            {
+              "step": 4,
+              "action": "Replace repeated findUnique calls with loader.load()"
+            }
+          ]
+        },
+        {
+          "id": "OPT-007",
+          "title": "Configure Database Connection Pool",
+          "priority": "HIGH",
+          "estimatedTime": "1-2 hours",
+          "expectedImprovement": "20-40% better under load",
+          "status": "pending",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Update DATABASE_URL with connection pool parameters",
+              "file": ".env",
+              "parameters": {
+                "connection_limit": 20,
+                "pool_timeout": 30,
+                "connect_timeout": 10
+              },
+              "example": "postgresql://user:pass@host:5432/db?connection_limit=20&pool_timeout=30&connect_timeout=10"
+            },
+            {
+              "step": 2,
+              "action": "Configure Prisma Client with explicit settings",
+              "file": "src/config/database.ts"
+            },
+            {
+              "step": 3,
+              "action": "Monitor connection pool usage under load"
+            }
+          ]
+        },
+        {
+          "id": "OPT-008",
+          "title": "Implement Query Result Counting Cache",
+          "priority": "HIGH",
+          "estimatedTime": "3-4 hours",
+          "expectedImprovement": "70-90% faster on count queries",
+          "status": "pending",
+          "description": "Cache _count queries separately and invalidate on writes",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Identify all _count queries in codebase"
+            },
+            {
+              "step": 2,
+              "action": "Wrap count queries with cache layer"
+            },
+            {
+              "step": 3,
+              "action": "Implement cache invalidation on relevant mutations"
+            }
+          ]
+        },
+        {
+          "id": "OPT-009",
+          "title": "Parallelize Sequential Queries",
+          "priority": "HIGH",
+          "estimatedTime": "2-3 hours",
+          "expectedImprovement": "2-3x faster",
+          "status": "pending",
+          "affectedFiles": [
+            "src/controllers/weekProgress.controller.ts"
+          ],
+          "steps": [
+            {
+              "step": 1,
+              "action": "Identify all sequential independent queries"
+            },
+            {
+              "step": 2,
+              "action": "Refactor to use Promise.all() for parallel execution"
+            },
+            {
+              "step": 3,
+              "action": "Ensure error handling for parallel queries"
+            }
+          ]
+        }
+      ]
+    },
+    "mediumPriority": {
+      "priority": "📊 MEDIUM PRIORITY",
+      "timeline": "Next Month",
+      "tasks": [
+        {
+          "id": "OPT-010",
+          "title": "Add Database Query Monitoring",
+          "priority": "MEDIUM",
+          "estimatedTime": "4-5 hours",
+          "expectedImprovement": "Enables identification of slow queries",
+          "status": "pending",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Set up Prisma query logging with timing"
+            },
+            {
+              "step": 2,
+              "action": "Create slow query alert system (queries > 1s)"
+            },
+            {
+              "step": 3,
+              "action": "Set up database connection pool monitoring"
+            },
+            {
+              "step": 4,
+              "action": "Create performance dashboard",
+              "metrics": [
+                "Average query time",
+                "Slowest queries",
+                "Query count per endpoint",
+                "Cache hit rate",
+                "Connection pool usage"
+              ]
+            },
+            {
+              "step": 5,
+              "action": "Enable pg_stat_statements extension in PostgreSQL"
+            }
+          ]
+        },
+        {
+          "id": "OPT-011",
+          "title": "Optimize Large Text Fields",
+          "priority": "MEDIUM",
+          "estimatedTime": "3-4 hours",
+          "expectedImprovement": "20-40% faster on queries with large text",
+          "status": "pending",
+          "affectedFields": [
+            "Assignment.instructions",
+            "Submission.content",
+            "Message.content",
+            "Announcement.content"
+          ],
+          "steps": [
+            {
+              "step": 1,
+              "action": "Identify text fields regularly > 1KB"
+            },
+            {
+              "step": 2,
+              "action": "Consider separating large text to related table"
+            },
+            {
+              "step": 3,
+              "action": "Exclude large text fields from list queries by default"
+            },
+            {
+              "step": 4,
+              "action": "Add full-text search indexes where needed"
+            }
+          ]
+        },
+        {
+          "id": "OPT-012",
+          "title": "Implement Database Views for Complex Queries",
+          "priority": "MEDIUM",
+          "estimatedTime": "5-6 hours",
+          "expectedImprovement": "40-60% faster on complex aggregations",
+          "status": "pending",
+          "views": [
+            {
+              "name": "student_progress_summary",
+              "purpose": "Pre-calculate student progress statistics",
+              "refresh": "materialized, refresh every 5 minutes"
+            },
+            {
+              "name": "class_enrollment_stats",
+              "purpose": "Pre-calculate enrollment statistics per class",
+              "refresh": "materialized, refresh every 10 minutes"
+            },
+            {
+              "name": "student_grade_summary",
+              "purpose": "Pre-calculate grade averages and totals",
+              "refresh": "materialized, refresh every 15 minutes"
+            }
+          ],
+          "steps": [
+            {
+              "step": 1,
+              "action": "Create migration files for materialized views"
+            },
+            {
+              "step": 2,
+              "action": "Set up automatic refresh jobs"
+            },
+            {
+              "step": 3,
+              "action": "Update services to query views instead of complex joins"
+            }
+          ]
+        },
+        {
+          "id": "OPT-013",
+          "title": "Implement Read Replicas",
+          "priority": "MEDIUM",
+          "estimatedTime": "6-8 hours",
+          "expectedImprovement": "30-50% better under high read load",
+          "status": "pending",
+          "requirements": [
+            "Database infrastructure supports replication",
+            "Budget allows for replica instances"
+          ],
+          "steps": [
+            {
+              "step": 1,
+              "action": "Set up database replication (primary + replica)"
+            },
+            {
+              "step": 2,
+              "action": "Configure Prisma with replica URLs",
+              "note": "Use $extends or multiple Prisma clients"
+            },
+            {
+              "step": 3,
+              "action": "Route read queries to replicas"
+            },
+            {
+              "step": 4,
+              "action": "Keep all writes on primary"
+            },
+            {
+              "step": 5,
+              "action": "Handle replication lag appropriately"
+            }
+          ]
+        },
+        {
+          "id": "OPT-014",
+          "title": "Add Query Result Pagination Cursor-Based",
+          "priority": "MEDIUM",
+          "estimatedTime": "4-5 hours",
+          "expectedImprovement": "Better performance for deep pagination",
+          "status": "pending",
+          "description": "Implement cursor-based pagination for tables with > 10k records",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Identify tables that need cursor-based pagination",
+              "candidates": [
+                "Message",
+                "Notification",
+                "Attendance",
+                "WeekProgress"
+              ]
+            },
+            {
+              "step": 2,
+              "action": "Implement cursor pagination helper"
+            },
+            {
+              "step": 3,
+              "action": "Update relevant endpoints to support cursor pagination"
+            }
+          ]
+        },
+        {
+          "id": "OPT-015",
+          "title": "Optimize findFirst Usage",
+          "priority": "MEDIUM",
+          "estimatedTime": "2-3 hours",
+          "expectedImprovement": "10-30% faster on unique lookups",
+          "status": "pending",
+          "description": "Replace findFirst with findUnique where unique constraints exist",
+          "steps": [
+            {
+              "step": 1,
+              "action": "Search codebase for all findFirst usage"
+            },
+            {
+              "step": 2,
+              "action": "Identify cases where unique constraints exist"
+            },
+            {
+              "step": 3,
+              "action": "Replace with findUnique for better performance"
+            }
+          ]
+        }
+      ]
+    },
+    "lowPriority": {
+      "priority": "🔧 LOW PRIORITY",
+      "timeline": "Future Enhancement",
+      "tasks": [
+        {
+          "id": "OPT-016",
+          "title": "Implement Database Sharding Strategy",
+          "priority": "LOW",
+          "estimatedTime": "40+ hours",
+          "expectedImprovement": "Horizontal scalability for massive growth",
+          "status": "pending",
+          "note": "Only needed if user base exceeds 100k+ active users"
+        },
+        {
+          "id": "OPT-017",
+          "title": "Add GraphQL Layer",
+          "priority": "LOW",
+          "estimatedTime": "20+ hours",
+          "expectedImprovement": "Eliminates over-fetching completely",
+          "status": "pending",
+          "note": "Alternative to REST for better query flexibility"
+        },
+        {
+          "id": "OPT-018",
+          "title": "Implement Event Sourcing for Audit Trail",
+          "priority": "LOW",
+          "estimatedTime": "30+ hours",
+          "expectedImprovement": "Better audit capabilities and temporal queries",
+          "status": "pending"
+        }
+      ]
+    }
+  },
+  "performanceMetrics": {
+    "currentState": {
+      "avgQueryTime": "unknown - needs measurement",
+      "slowestEndpoints": "to be identified",
+      "cacheHitRate": "0% (no caching)",
+      "databaseConnectionPoolUsage": "default Prisma settings"
+    },
+    "targetState": {
+      "avgQueryTime": "< 100ms for list, < 50ms for detail",
+      "p95QueryTime": "< 500ms",
+      "p99QueryTime": "< 1000ms",
+      "cacheHitRate": "> 80% on cacheable data",
+      "overallImprovement": "5-10x faster"
+    },
+    "trackingMetrics": [
+      "Query execution time per endpoint",
+      "Database connection pool usage",
+      "Cache hit/miss ratio",
+      "N+1 query count",
+      "Query count per request"
+    ]
+  },
+  "codeExamples": {
+    "addIndexes": {
+      "file": "prisma/schema.prisma",
+      "code": "model Enrollment {\n  // ... existing fields\n  @@index([classId, status])\n  @@index([studentId, status])\n}"
+    },
+    "fixN1Query": {
+      "file": "src/services/submission.service.ts",
+      "before": "const students = await prisma.submission.groupBy(...);\nconst latestSubmissions = await Promise.all(\n  students.map(({ studentId }) => prisma.submission.findFirst(...))\n);",
+      "after": "const latestSubmissions = await prisma.$queryRaw`\n  SELECT DISTINCT ON (student_id) *\n  FROM submissions\n  WHERE assignment_id = ${assignmentId}\n  ORDER BY student_id, attempt_number DESC\n`;"
+    },
+    "addPagination": {
+      "file": "src/services/message.service.ts",
+      "code": "async getInbox(userId: string, options: PaginationOptions) {\n  const { page = 1, limit = 20 } = options;\n  const skip = (page - 1) * limit;\n  \n  return await prisma.message.findMany({\n    where: { receiverId: userId },\n    take: limit,\n    skip,\n    orderBy: { createdAt: 'desc' }\n  });\n}"
+    },
+    "implementCache": {
+      "file": "src/services/cache.service.ts",
+      "code": "export class CacheService {\n  async getOrSet<T>(key: string, ttl: number, fn: () => Promise<T>): Promise<T> {\n    const cached = await redis.get(key);\n    if (cached) return JSON.parse(cached);\n    \n    const fresh = await fn();\n    await redis.setex(key, ttl, JSON.stringify(fresh));\n    return fresh;\n  }\n  \n  async invalidate(key: string) {\n    await redis.del(key);\n  }\n  \n  async invalidatePattern(pattern: string) {\n    const keys = await redis.keys(pattern);\n    if (keys.length > 0) await redis.del(...keys);\n  }\n}"
+    },
+    "optimizeIncludes": {
+      "before": "include: {\n  lesson: {\n    include: {\n      class: {\n        include: {\n          instructor: { include: { user: true } }\n        }\n      }\n    }\n  }\n}",
+      "after": "include: {\n  lesson: {\n    select: {\n      id: true,\n      title: true,\n      weekNumber: true,\n      class: {\n        select: {\n          id: true,\n          name: true\n        }\n      }\n    }\n  }\n}"
+    },
+    "parallelizeQueries": {
+      "before": "const student = await prisma.student.findFirst(...);\nconst enrollment = await prisma.enrollment.findFirst(...);\nconst lesson = await prisma.lesson.findFirst(...);",
+      "after": "const [student, enrollment, lesson] = await Promise.all([\n  prisma.student.findFirst(...),\n  prisma.enrollment.findFirst(...),\n  prisma.lesson.findFirst(...)\n]);"
+    }
+  },
+  "testingStrategy": {
+    "beforeOptimization": [
+      "Run performance benchmarks on key endpoints",
+      "Measure query execution times",
+      "Document current performance metrics",
+      "Create test dataset with realistic data volumes"
+    ],
+    "afterEachOptimization": [
+      "Run same benchmarks to measure improvement",
+      "Verify no functionality regression",
+      "Check for new N+1 queries",
+      "Monitor error rates"
+    ],
+    "tools": [
+      "Artillery or k6 for load testing",
+      "Prisma query logging",
+      "PostgreSQL pg_stat_statements",
+      "Application performance monitoring (APM)"
+    ]
+  },
+  "estimatedTimeline": {
+    "week1": [
+      "OPT-001: Add Missing Database Indexes",
+      "OPT-002: Fix N+1 Query in Submission Service"
+    ],
+    "week2": [
+      "OPT-003: Add Pagination to All List Endpoints",
+      "OPT-004: Implement Redis Caching Layer"
+    ],
+    "week3": [
+      "OPT-005: Optimize Nested Includes",
+      "OPT-007: Configure Database Connection Pool"
+    ],
+    "week4": [
+      "OPT-006: Implement DataLoader for Batch Loading",
+      "OPT-008: Implement Query Result Counting Cache",
+      "OPT-009: Parallelize Sequential Queries"
+    ],
+    "month2": [
+      "OPT-010: Add Database Query Monitoring",
+      "OPT-011: Optimize Large Text Fields",
+      "OPT-015: Optimize findFirst Usage"
+    ],
+    "month3": [
+      "OPT-012: Implement Database Views for Complex Queries",
+      "OPT-014: Add Query Result Pagination Cursor-Based"
+    ],
+    "future": [
+      "OPT-013: Implement Read Replicas (if needed)",
+      "OPT-016: Database Sharding (if massive scale)",
+      "OPT-017: GraphQL Layer (alternative architecture)"
+    ]
+  },
+  "monitoringChecklist": {
+    "metrics": [
+      "Average query execution time",
+      "95th and 99th percentile query times",
+      "Number of queries per request",
+      "Cache hit/miss ratio",
+      "Database connection pool utilization",
+      "Slow query count (> 1s)",
+      "Error rate by endpoint"
+    ],
+    "alerts": [
+      "Query execution time > 1s",
+      "Connection pool > 80% utilized",
+      "Cache hit rate < 70%",
+      "Error rate > 1%"
+    ]
+  },
+  "notes": [
+    "Start with indexing and N+1 fixes - highest ROI",
+    "Measure performance before and after each optimization",
+    "Don't over-optimize - focus on bottlenecks first",
+    "Cache invalidation is hard - plan carefully",
+    "Consider eventual consistency tradeoffs with caching",
+    "Monitor production metrics after each deployment"
+  ]
+}

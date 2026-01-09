@@ -202,7 +202,7 @@ router.get(
  * @swagger
  * /attendance:
  *   get:
- *     summary: Get all attendance records
+ *     summary: Get all attendance records with advanced filtering
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -210,29 +210,72 @@ router.get(
 router.get(
   '/',
   authenticate,
-  authorize(UserRole.ADMIN),
+  authorize(UserRole.ADMIN, UserRole.INSTRUCTOR),
   asyncHandler(async (req, res) => {
-    const { status, startDate, endDate } = req.query;
+    const { status, startDate, endDate, classId, wardId, groupBy } = req.query;
+    const currentUser = req.user!;
 
     const where: any = {};
     if (status) where.status = status;
+    if (classId) where.classId = classId;
+    
     if (startDate || endDate) {
       where.date = {};
       if (startDate) where.date.gte = new Date(startDate as string);
       if (endDate) where.date.lte = new Date(endDate as string);
     }
 
+    // Ward filter
+    if (wardId) {
+      where.student = {
+        user: {
+          wardId: wardId as string
+        }
+      };
+    }
+
+    // If instructor, only show attendance for their classes
+    if (currentUser.role === UserRole.INSTRUCTOR) {
+      const instructor = await prisma.instructor.findUnique({
+        where: { userId: currentUser.id },
+        include: { classes: { select: { id: true } } }
+      });
+
+      if (instructor) {
+        const classIds = instructor.classes.map(c => c.id);
+        where.classId = { in: classIds };
+      }
+    }
+
     const attendance = await prisma.attendance.findMany({
       where,
       include: {
-        class: true,
+        class: {
+          include: {
+            instructor: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  }
+                }
+              }
+            },
+            ward: true
+          }
+        },
         student: {
           include: {
             user: {
               select: {
+                id: true,
                 firstName: true,
                 lastName: true,
                 email: true,
+                phone: true,
+                profilePicture: true,
+                ward: true
               },
             },
           },
@@ -242,6 +285,134 @@ router.get(
     });
 
     ResponseUtil.success(res, 'Attendance retrieved successfully', attendance);
+  })
+);
+
+/**
+ * @swagger
+ * /attendance/report:
+ *   get:
+ *     summary: Get attendance report with aggregations
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/report',
+  authenticate,
+  authorize(UserRole.ADMIN, UserRole.INSTRUCTOR),
+  asyncHandler(async (req, res) => {
+    const { startDate, endDate, classId, wardId, groupBy = 'class' } = req.query;
+    const currentUser = req.user!;
+
+    const where: any = {};
+    if (classId) where.classId = classId;
+    
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) where.date.gte = new Date(startDate as string);
+      if (endDate) where.date.lte = new Date(endDate as string);
+    }
+
+    // Ward filter
+    if (wardId) {
+      where.student = {
+        user: {
+          wardId: wardId as string
+        }
+      };
+    }
+
+    // If instructor, only show attendance for their classes
+    if (currentUser.role === UserRole.INSTRUCTOR) {
+      const instructor = await prisma.instructor.findUnique({
+        where: { userId: currentUser.id },
+        include: { classes: { select: { id: true } } }
+      });
+
+      if (instructor) {
+        const classIds = instructor.classes.map(c => c.id);
+        where.classId = { in: classIds };
+      }
+    }
+
+    // Get all attendance records
+    const attendance = await prisma.attendance.findMany({
+      where,
+      include: {
+        class: {
+          include: {
+            instructor: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                  }
+                }
+              }
+            }
+          }
+        },
+        student: {
+          include: {
+            user: {
+              select: {
+                ward: true
+              }
+            }
+          }
+        }
+      },
+    });
+
+    // Group by class
+    const groupedData: any[] = [];
+    const classMap = new Map();
+
+    attendance.forEach(record => {
+      const classId = record.class.id;
+      if (!classMap.has(classId)) {
+        classMap.set(classId, {
+          classId: record.class.id,
+          className: record.class.name,
+          instructorName: `${record.class.instructor.user.firstName} ${record.class.instructor.user.lastName}`,
+          totalAttendance: 0,
+          approved: 0,
+          pending: 0,
+          rejected: 0,
+          dates: new Set()
+        });
+      }
+      
+      const classData = classMap.get(classId);
+      classData.totalAttendance++;
+      classData.dates.add(record.date.toISOString().split('T')[0]);
+      
+      if (record.status === 'APPROVED') classData.approved++;
+      else if (record.status === 'PENDING') classData.pending++;
+      else if (record.status === 'REJECTED') classData.rejected++;
+    });
+
+    classMap.forEach(value => {
+      groupedData.push({
+        ...value,
+        uniqueDates: value.dates.size,
+        dates: undefined
+      });
+    });
+
+    ResponseUtil.success(res, 'Attendance report generated successfully', {
+      summary: {
+        totalRecords: attendance.length,
+        totalClasses: groupedData.length,
+        dateRange: {
+          start: startDate,
+          end: endDate
+        }
+      },
+      data: groupedData
+    });
   })
 );
 

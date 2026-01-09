@@ -9,10 +9,22 @@ import instructorRoutes from './instructor.routes';
 import studentRoutes from './student.routes';
 import notificationRoutes from './notification.routes';
 
+// Canvas LMS routes
+import lessonRoutes from './lesson.routes';
+import assignmentRoutes from './assignment.routes';
+import submissionRoutes from './submission.routes';
+import gradeRoutes from './grade.routes';
+import messageRoutes from './message.routes';
+import certificateRoutes from './certificate.routes';
+import weekProgressRoutes from './weekProgress.routes';
+import courseMaterialRoutes from './courseMaterial.routes';
+import uploadRoutes from './upload.routes';
+import announcementRoutes from './announcement.routes';
+
 const router = Router();
 
 // Health check endpoint (also used for keep-alive)
-router.get('/health', (req, res) => {
+router.get('/health', (_req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
@@ -22,7 +34,7 @@ router.get('/health', (req, res) => {
 });
 
 // Keep-alive endpoint (for cron jobs to ping)
-router.get('/keep-alive', (req, res) => {
+router.get('/keep-alive', (_req, res) => {
   res.json({
     status: 'alive',
     message: 'Server is awake',
@@ -31,7 +43,7 @@ router.get('/keep-alive', (req, res) => {
   });
 });
 
-// API routes
+// API routes - Core functionality
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
 router.use('/wards', wardRoutes);
@@ -42,4 +54,17 @@ router.use('/instructors', instructorRoutes);
 router.use('/students', studentRoutes);
 router.use('/notifications', notificationRoutes);
 
+// API routes - Canvas LMS functionality
+router.use('/lessons', lessonRoutes);
+router.use('/assignments', assignmentRoutes);
+router.use('/submissions', submissionRoutes);
+router.use('/grades', gradeRoutes);
+router.use('/messages', messageRoutes);
+router.use('/certificates', certificateRoutes);
+router.use('/week-progress', weekProgressRoutes);
+router.use('/course-materials', courseMaterialRoutes);
+router.use('/upload', uploadRoutes);
+router.use('/announcements', announcementRoutes);
+
 export default router;
+

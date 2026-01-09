@@ -12,6 +12,8 @@ interface RegisterData {
   phone: string;
   role: UserRole;
   wardId: string;
+  profilePicture?: string;
+  classId?: string; // For instructor class assignment
 }
 
 interface LoginData {
@@ -52,6 +54,7 @@ export class AuthService {
         phone: data.phone,
         role: data.role,
         wardId: data.wardId,
+        profilePicture: data.profilePicture,
       },
       select: {
         id: true,
@@ -68,12 +71,22 @@ export class AuthService {
 
     // Create role-specific profile
     if (data.role === UserRole.INSTRUCTOR) {
-      await prisma.instructor.create({
+      const instructor = await prisma.instructor.create({
         data: {
           userId: user.id,
           skills: [],
         },
       });
+
+      // If classId is provided, assign instructor to the class
+      if (data.classId) {
+        await prisma.class.update({
+          where: { id: data.classId },
+          data: {
+            instructorId: instructor.id,
+          },
+        });
+      }
     } else if (data.role === UserRole.STUDENT) {
       await prisma.student.create({
         data: {

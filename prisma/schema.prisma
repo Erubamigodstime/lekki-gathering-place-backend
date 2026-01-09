@@ -50,6 +50,63 @@ enum NotificationType {
   ERROR
 }
 
+enum AssignmentType {
+  TEXT
+  IMAGE
+  VIDEO
+  CHECKBOX
+  FILE
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  GRADED
+  APPROVED
+  REJECTED
+}
+
+enum MessageType {
+  DIRECT
+  BROADCAST
+  CLASS
+  SYSTEM
+}
+
+enum CertificateStatus {
+  PENDING
+  ISSUED
+  REVOKED
+  EXPIRED
+}
+
+enum MaterialType {
+  PDF
+  VIDEO
+  LINK
+  DOCUMENT
+}
+
+enum GradeStatus {
+  PENDING
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AttendanceApproval {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 // Models
 model User {
   id                String             @id @default(uuid())
@@ -80,6 +137,11 @@ model User {
   createdClasses    Class[]            @relation("ClassCreator")
   notifications     Notification[]
   sessions          Session[]
+  
+  // Canvas LMS relations
+  sentMessages      Message[]          @relation("MessageSender")
+  receivedMessages  Message[]          @relation("MessageReceiver")
+  grades            Grade[]            @relation("GradedBy")
   
   @@index([email])
   @@index([role])
@@ -125,6 +187,7 @@ model Instructor {
   // Relations
   classes             Class[]
   attendanceApprovals Attendance[]    @relation("ApprovedBy")
+  announcements       Announcement[]
   
   @@index([approvalStatus])
   @@map("instructors")
@@ -146,38 +209,74 @@ model Student {
   enrollments        Enrollment[]
   attendance         Attendance[]
   
+  // Canvas LMS relations
+  submissions        Submission[]
+  weekProgress       WeekProgress[]
+  
   @@map("students")
 }
 
 model Class {
   id               String        @id @default(uuid())
   name             String
-  description      String
-  schedule         Json          // { days: string[], time: string }
+  description      String?
+  overview         String?       // Detailed course overview
+  category         String?       // e.g., "Media & Content Creation"
+  level            String?       // e.g., "Beginner", "Intermediate", "Advanced"
+  mode             String?       // e.g., "In-person / Practical"
+  schedule         Json          // { days: string[], time: string, weeklyLessons?: [] }
   maxCapacity      Int
   status           ClassStatus   @default(ACTIVE)
   thumbnail        String?
   
+  // Duration
+  totalLessons     Int?
+  totalWeeks       Int           @default(12)
+  
+  // Course Content
+  learningOutcomes      String[]  @default([])
+  courseRequirements    String[]  @default([])
+  toolsAndMaterials     String[]  @default([])
+  
+  // Instructor Info (for display)
+  instructorName        String?
+  instructorProfileSlug String?
+  
+  // Certification
+  certificationIssued   Boolean   @default(true)
+  certificationCriteria String?
+  
   // Relations
-  instructorId     String
-  instructor       Instructor    @relation(fields: [instructorId], references: [id])
+  instructorId     String?
+  instructor       Instructor?   @relation(fields: [instructorId], references: [id])
   
   wardId           String
   ward             Ward          @relation(fields: [wardId], references: [id])
   
-  createdById      String
-  createdBy        User          @relation("ClassCreator", fields: [createdById], references: [id])
+  createdById      String?
+  createdBy        User?         @relation("ClassCreator", fields: [createdById], references: [id])
   
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
+  
+  // Canvas LMS fields
+  gradingEnabled   Boolean       @default(true)
+  completionRules  Json?         // Custom completion requirements
   
   // Relations
   enrollments      Enrollment[]
   attendance       Attendance[]
   
+  // Canvas LMS relations
+  lessons          Lesson[]
+  messages         Message[]
+  announcements    Announcement[]
+  
   @@index([instructorId])
   @@index([wardId])
   @@index([status])
+  @@index([category])
+  @@index([level])
   @@map("classes")
 }
 
@@ -200,6 +299,15 @@ model Enrollment {
   
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
+  
+  // Canvas LMS fields
+  totalPoints      Float           @default(0)
+  currentGrade     Float?
+  certificateIssued Boolean        @default(false)
+  
+  // Canvas LMS relations
+  weekProgress     WeekProgress[]
+  certificate      Certificate?
   
   @@unique([classId, studentId])
   @@index([studentId])
@@ -277,4 +385,278 @@ model Session {
   @@index([userId])
   @@index([refreshToken])
   @@map("sessions")
+}
+
+// ============================================================================
+// CANVAS LEARNING MANAGEMENT SYSTEM (LMS) MODELS
+// ============================================================================
+
+model Lesson {
+  id                  String             @id @default(uuid())
+  
+  // Relations
+  classId             String
+  class               Class              @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  // Lesson details
+  weekNumber          Int
+  title               String
+  description         String?            @db.Text
+  videoUrl            String?
+  completionRequired  Boolean            @default(true)
+  dueDate             DateTime?
+  estimatedDuration   Int?               // Minutes
+  orderIndex          Int                @default(0)
+  isPublished         Boolean            @default(false)
+  
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  
+  // Relations
+  courseMaterials     CourseMaterial[]
+  assignments         Assignment[]
+  weekProgress        WeekProgress[]
+  
+  @@unique([classId, weekNumber])
+  @@index([classId])
+  @@index([weekNumber])
+  @@index([isPublished])
+  @@map("lessons")
+}
+
+model CourseMaterial {
+  id          String       @id @default(uuid())
+  
+  // Relations
+  lessonId    String
+  lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  // Material details
+  title       String
+  fileUrl     String
+  type        MaterialType
+  fileSize    Int?         // Bytes
+  orderIndex  Int          @default(0)
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  @@index([lessonId])
+  @@map("course_materials")
+}
+
+model Assignment {
+  id                  String           @id @default(uuid())
+  
+  // Relations
+  lessonId            String
+  lesson              Lesson           @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  // Assignment details
+  title               String
+  instructions        String           @db.Text
+  type                AssignmentType
+  maxPoints           Float
+  rubric              Json?            // Grading rubric
+  dueDate             DateTime?
+  allowLateSubmission Boolean          @default(true)
+  isPublished         Boolean          @default(false)
+  
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  
+  // Relations
+  submissions         Submission[]
+  
+  @@index([lessonId])
+  @@index([isPublished])
+  @@index([dueDate])
+  @@map("assignments")
+}
+
+model Submission {
+  id             String           @id @default(uuid())
+  
+  // Relations
+  assignmentId   String
+  assignment     Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  
+  studentId      String
+  student        Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  // Submission details
+  content        String?          @db.Text
+  fileUrl        String?
+  metadata       Json?            // Additional submission data
+  status         SubmissionStatus @default(DRAFT)
+  submittedAt    DateTime?
+  attemptNumber  Int              @default(1)
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  
+  // Relations
+  grade          Grade?
+  
+  @@unique([assignmentId, studentId, attemptNumber])
+  @@index([assignmentId])
+  @@index([studentId])
+  @@index([status])
+  @@map("submissions")
+}
+
+model Grade {
+  id                 String      @id @default(uuid())
+  
+  // Relations
+  submissionId       String      @unique
+  submission         Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  
+  // Grade details
+  points             Float
+  maxPoints          Float
+  percentage         Float
+  instructorComment  String?     @db.Text
+  feedback           Json?       // Detailed feedback
+  status             GradeStatus @default(PENDING)
+  
+  // Audit trail
+  gradedById         String
+  gradedBy           User        @relation("GradedBy", fields: [gradedById], references: [id])
+  gradedAt           DateTime    @default(now())
+  publishedAt        DateTime?
+  
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  
+  @@index([submissionId])
+  @@index([gradedById])
+  @@index([status])
+  @@map("grades")
+}
+
+model WeekProgress {
+  id                  String    @id @default(uuid())
+  
+  // Relations
+  enrollmentId        String
+  enrollment          Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  
+  studentId           String
+  student             Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  lessonId            String
+  lesson              Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  
+  // Progress details
+  weekNumber          Int
+  completed           Boolean   @default(false)
+  completedAt         DateTime?
+  instructorApproved  Boolean   @default(false)
+  approvedAt          DateTime?
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  @@unique([enrollmentId, lessonId])
+  @@index([enrollmentId])
+  @@index([studentId])
+  @@index([lessonId])
+  @@index([completed])
+  @@map("week_progress")
+}
+
+model Message {
+  id           String      @id @default(uuid())
+  
+  // Relations
+  senderId     String
+  sender       User        @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  
+  receiverId   String?
+  receiver     User?       @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  
+  classId      String?
+  class        Class?      @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  // Message details
+  content      String      @db.Text
+  type         MessageType @default(DIRECT)
+  attachments  Json?       // File attachments metadata
+  
+  // Threading
+  parentId     String?
+  parent       Message?    @relation("MessageThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      Message[]   @relation("MessageThread")
+  
+  // Status
+  readAt       DateTime?
+  deletedAt    DateTime?   // Soft delete
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([classId])
+  @@index([parentId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+model Certificate {
+  id              String            @id @default(uuid())
+  
+  // Relations
+  enrollmentId    String            @unique
+  enrollment      Enrollment        @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  
+  // Certificate details
+  certificateUrl  String
+  certificateCode String            @unique
+  status          CertificateStatus @default(PENDING)
+  issueDate       DateTime          @default(now())
+  expiryDate      DateTime?
+  templateId      String?
+  metadata        Json?             // Additional certificate data
+  verificationUrl String?
+  
+  // Revocation
+  revokedAt       DateTime?
+  revokedBy       String?
+  revocationReason String?
+  
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  @@index([enrollmentId])
+  @@index([certificateCode])
+  @@index([status])
+  @@map("certificates")
+}
+
+model Announcement {
+  id           String               @id @default(uuid())
+  
+  // Relations
+  classId      String
+  class        Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  instructorId String
+  instructor   Instructor           @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+  
+  // Announcement details
+  title        String
+  content      String               @db.Text
+  priority     AnnouncementPriority @default(NORMAL)
+  views        Int                  @default(0)
+  
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  
+  @@index([classId])
+  @@index([instructorId])
+  @@index([createdAt])
+  @@map("announcements")
 }

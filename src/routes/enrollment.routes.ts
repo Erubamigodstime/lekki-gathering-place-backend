@@ -25,9 +25,13 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user!.id;
 
+    console.log('Fetching enrollments for user:', userId);
+
     const student = await prisma.student.findUnique({
       where: { userId },
     });
+
+    console.log('Student profile lookup result:', student ? `Found: ${student.id}` : 'Not found');
 
     if (!student) {
       return ResponseUtil.notFound(res, 'Student profile not found');
@@ -56,6 +60,8 @@ router.get(
       orderBy: { enrolledAt: 'desc' },
     });
 
+    console.log('Enrollments found:', enrollments.length, 'Statuses:', enrollments.map(e => e.status));
+
     ResponseUtil.success(res, 'Enrollments retrieved successfully', enrollments);
   })
 );
@@ -77,12 +83,22 @@ router.get(
     const { classId } = req.params;
     const { status } = req.query;
 
+    console.log('Fetching enrollments for class:', classId, 'with status:', status);
+
     const where: any = { classId };
     if (status) where.status = status;
 
     const enrollments = await prisma.enrollment.findMany({
       where,
       include: {
+        class: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            maxCapacity: true,
+          },
+        },
         student: {
           include: {
             user: {
@@ -93,6 +109,74 @@ router.get(
                 email: true,
                 phone: true,
                 profilePicture: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { enrolledAt: 'desc' },
+    });
+
+    console.log('Found', enrollments.length, 'enrollments for class', classId);
+    console.log('Enrollment statuses:', enrollments.map(e => ({ studentName: e.student.user.firstName, status: e.status })));
+
+    ResponseUtil.success(res, 'Enrollments retrieved successfully', enrollments);
+  })
+);
+
+/**
+ * @swagger
+ * /enrollments:
+ *   get:
+ *     summary: Get all enrollments (Admin/Instructor)
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/',
+  authenticate,
+  authorize(UserRole.ADMIN, UserRole.INSTRUCTOR),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status } = req.query;
+    const currentUser = req.user!;
+
+    const where: any = {};
+    if (status) where.status = status;
+
+    // If instructor, only show enrollments for their classes
+    if (currentUser.role === UserRole.INSTRUCTOR) {
+      const instructor = await prisma.instructor.findUnique({
+        where: { userId: currentUser.id },
+        include: { classes: { select: { id: true } } }
+      });
+
+      if (instructor) {
+        const classIds = instructor.classes.map(c => c.id);
+        where.classId = { in: classIds };
+      }
+    }
+
+    const enrollments = await prisma.enrollment.findMany({
+      where,
+      include: {
+        class: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        student: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                phone: true,
+                profilePicture: true,
+                wardId: true,
               },
             },
           },
@@ -122,11 +206,16 @@ router.post(
     const { classId } = req.body;
     const userId = req.user!.id;
 
+    console.log('Enrollment request received:', { userId, classId });
+
     const student = await prisma.student.findUnique({
       where: { userId },
     });
 
+    console.log('Student profile found:', student ? 'Yes' : 'No', student?.id);
+
     if (!student) {
+      console.error('Student profile not found for userId:', userId);
       return ResponseUtil.notFound(res, 'Student profile not found');
     }
 
@@ -158,6 +247,8 @@ router.post(
       },
     });
 
+    console.log('Existing enrollment check:', existingEnrollment ? 'Already enrolled' : 'Not enrolled');
+
     if (existingEnrollment) {
       throw new AppError('You are already enrolled in this class', 409);
     }
@@ -188,6 +279,18 @@ router.post(
           },
         },
       },
+    });
+
+    console.log('Enrollment created successfully:', {
+      enrollmentId: enrollment.id,
+      classId: enrollment.classId,
+      studentId: enrollment.studentId,
+      status: enrollment.status,
+      className: enrollment.class.name,
+      instructorId: enrollment.class.instructorId,
+      instructorName: enrollment.class.instructor?.user ? 
+        `${enrollment.class.instructor.user.firstName} ${enrollment.class.instructor.user.lastName}` : 
+        'No instructor'
     });
 
     ResponseUtil.created(res, 'Enrollment request submitted successfully', enrollment);
