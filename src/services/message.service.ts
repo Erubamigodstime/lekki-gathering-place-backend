@@ -1,4 +1,6 @@
 import { PrismaClient, Message, MessageType } from '@prisma/client';
+import socketService from '../config/socket';
+import cacheService from '../config/cache';
 
 const prisma = new PrismaClient();
 
@@ -25,7 +27,7 @@ export class MessageService {
       throw new Error('Receiver not found');
     }
 
-    return await prisma.message.create({
+    const message = await prisma.message.create({
       data: {
         senderId,
         receiverId,
@@ -33,7 +35,31 @@ export class MessageService {
         type: MessageType.DIRECT,
         attachments,
       },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            profilePicture: true,
+          },
+        },
+      },
     });
+
+    // ✨ Real-time: Emit message to receiver via WebSocket
+    socketService.emitNewMessage(receiverId, message);
+
+    // ✨ Cache: Invalidate conversation caches for both users
+    cacheService.del([
+      cacheService.keys.conversations(senderId),
+      cacheService.keys.conversations(receiverId),
+      cacheService.keys.thread(senderId, receiverId),
+      cacheService.keys.thread(receiverId, senderId),
+      cacheService.keys.unreadCount(receiverId),
+    ]);
+
+    return message;
   }
 
   /**
@@ -463,6 +489,13 @@ export class MessageService {
    * Returns unique conversations with last message, unread count, and participant info
    */
   async getConversations(userId: string) {
+    // ✨ Try cache first (30 second TTL)
+    const cacheKey = cacheService.keys.conversations(userId);
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     // Get all messages where user is sender or receiver
     const messages = await prisma.message.findMany({
       where: {
@@ -535,9 +568,14 @@ export class MessageService {
       }
     }
 
-    return Array.from(conversationsMap.values()).sort((a, b) => 
+    const conversations = Array.from(conversationsMap.values()).sort((a, b) => 
       new Date(b.lastMessage.createdAt).getTime() - new Date(a.lastMessage.createdAt).getTime()
     );
+
+    // ✨ Cache for 30 seconds
+    cacheService.set(cacheKey, conversations, 30);
+
+    return conversations;
   }
 
   /**

@@ -10,6 +10,12 @@ export class AnnouncementController {
       const { title, content, priority, classId } = req.body;
       const userId = req.user.id;
 
+      console.log('=== Creating Announcement ===');
+      console.log('Instructor userId:', userId);
+      console.log('Target classId:', classId);
+      console.log('Title:', title);
+      console.log('Priority:', priority);
+
       // Verify user is an instructor
       const instructor = await prisma.instructor.findUnique({
         where: { userId },
@@ -19,17 +25,31 @@ export class AnnouncementController {
         throw new AppError('Only instructors can create announcements', 403);
       }
 
+      console.log('Instructor found:', instructor.id);
+
       // Verify instructor teaches this class
       const classExists = await prisma.class.findFirst({
         where: {
           id: classId,
           instructorId: instructor.id,
         },
+        include: {
+          _count: {
+            select: {
+              enrollments: {
+                where: { status: 'APPROVED' }
+              }
+            }
+          }
+        }
       });
 
       if (!classExists) {
         throw new AppError('You can only create announcements for your own classes', 403);
       }
+
+      console.log('Class verified:', classExists.name);
+      console.log('Number of approved students in class:', classExists._count?.enrollments || 0);
 
       // Create announcement
       const announcement = await prisma.announcement.create({
@@ -55,6 +75,9 @@ export class AnnouncementController {
         },
       });
 
+      console.log('Announcement created successfully:', announcement.id);
+      console.log('All approved students in the class will now see this announcement');
+
       ResponseUtil.success(res, 'Announcement created successfully', announcement, 201);
     } catch (error) {
       next(error);
@@ -66,6 +89,10 @@ export class AnnouncementController {
     try {
       const { classId } = req.params;
       const userId = req.user.id;
+
+      console.log('=== Fetching Announcements ===');
+      console.log('User ID:', userId);
+      console.log('Class ID:', classId);
 
       // Verify user has access to this class (enrolled student or teaching instructor)
       const user = await prisma.user.findUnique({
@@ -81,6 +108,7 @@ export class AnnouncementController {
       }
 
       let hasAccess = false;
+      let userRole = '';
 
       // Check if user is the instructor
       if (user.instructorProfile) {
@@ -91,6 +119,7 @@ export class AnnouncementController {
           },
         });
         hasAccess = !!teachesClass;
+        if (hasAccess) userRole = 'instructor';
       }
 
       // Check if user is an enrolled student
@@ -103,7 +132,11 @@ export class AnnouncementController {
           },
         });
         hasAccess = !!enrollment;
+        if (hasAccess) userRole = 'student';
       }
+
+      console.log('User role:', userRole);
+      console.log('Has access:', hasAccess);
 
       if (!hasAccess) {
         throw new AppError('You do not have access to this class', 403);
@@ -129,6 +162,9 @@ export class AnnouncementController {
           createdAt: 'desc',
         },
       });
+
+      console.log('Found', announcements.length, 'announcements for this class');
+      console.log(`User (${userRole}) can see all announcements for this class`);
 
       ResponseUtil.success(res, 'Announcements fetched successfully', announcements);
     } catch (error) {

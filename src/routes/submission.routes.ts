@@ -22,14 +22,17 @@ router.use(authMiddleware);
 // Create a new submission
 router.post('/', validateRequest(createSubmissionSchema), submissionController.create);
 
-// Get submission by ID
-router.get('/:id', validateRequest(getSubmissionByIdSchema), submissionController.getById);
+// Get submissions by class (must be before /:id to avoid conflict)
+router.get('/class/:classId', submissionController.getByClass);
 
 // Get submissions by assignment
 router.get('/assignment/:assignmentId', validateRequest(getSubmissionsByAssignmentSchema), submissionController.getByAssignment);
 
 // Get submissions by student
 router.get('/student/:studentId', validateRequest(getSubmissionsByStudentSchema), submissionController.getByStudent);
+
+// Get submission by ID (must be after specific routes)
+router.get('/:id', validateRequest(getSubmissionByIdSchema), submissionController.getById);
 
 // Update a submission
 router.put('/:id', validateRequest(updateSubmissionSchema), submissionController.update);

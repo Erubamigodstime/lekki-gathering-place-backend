@@ -95,6 +95,27 @@ router.get(
           },
         },
         ward: true,
+        enrollments: {
+          where: { status: 'APPROVED' },
+          include: {
+            student: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                    profilePicture: true,
+                  },
+                },
+              },
+            },
+          },
+          orderBy: {
+            enrolledAt: 'desc',
+          },
+        },
         _count: {
           select: {
             enrollments: {

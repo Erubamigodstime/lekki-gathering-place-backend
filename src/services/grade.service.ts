@@ -170,6 +170,61 @@ export class GradeService {
   }
 
   /**
+   * Get all grades for a class
+   */
+  async getByClass(classId: string) {
+    return await prisma.grade.findMany({
+      where: {
+        submission: {
+          assignment: {
+            lesson: {
+              classId,
+            },
+          },
+        },
+      },
+      include: {
+        submission: {
+          include: {
+            student: {
+              include: {
+                user: {
+                  select: {
+                    firstName: true,
+                    lastName: true,
+                    email: true,
+                  },
+                },
+              },
+            },
+            assignment: {
+              include: {
+                lesson: {
+                  select: {
+                    weekNumber: true,
+                    title: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        gradedBy: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+      orderBy: [
+        {
+          gradedAt: 'desc',
+        },
+      ],
+    });
+  }
+
+  /**
    * Update an existing grade
    */
   async update(id: string, data: UpdateGradeDTO): Promise<Grade> {

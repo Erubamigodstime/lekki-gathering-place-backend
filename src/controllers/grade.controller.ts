@@ -48,6 +48,16 @@ export class GradeController {
     }
   }
 
+  async getByClass(req: Request, res: Response) {
+    try {
+      const { classId } = req.params;
+      const grades = await gradeService.getByClass(classId);
+      return ResponseUtil.success(res, 'Success', grades);
+    } catch (error: any) {
+      return ResponseUtil.error(res, error.message, 400);
+    }
+  }
+
   async update(req: Request, res: Response) {
     try {
       const { id } = req.params;

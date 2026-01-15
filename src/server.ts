@@ -4,6 +4,8 @@ import { logger } from './config/logger';
 import prisma from './config/database';
 import { redisClient } from './config/redis';
 import { KeepAliveUtil } from './utils/keep-alive.util';
+import socketService from './config/socket';
+import { createServer } from 'http';
 
 const PORT = config.port;
 
@@ -60,8 +62,20 @@ const startServer = async () => {
       logger.warn('Redis connection failed. Continuing without Redis...', error);
     }
 
-    // Start Express server
-    const server = app.listen(PORT, () => {
+    // Create HTTP server
+    const httpServer = createServer(app);
+
+    // Initialize Socket.io
+    try {
+      socketService.initialize(httpServer);
+      logger.info('Socket.io initialized for real-time messaging');
+    } catch (error) {
+      logger.error('Failed to initialize Socket.io:', error);
+      logger.warn('Continuing without Socket.io...');
+    }
+
+    // Start HTTP server
+    const server = httpServer.listen(PORT, () => {
       logger.info(`
         ╔═══════════════════════════════════════════════════╗
         ║                                                   ║
@@ -70,9 +84,11 @@ const startServer = async () => {
         ║   Environment: ${config.env.padEnd(34)}║
         ║   Port: ${PORT.toString().padEnd(42)}║
         ║   API Version: ${config.apiVersion.padEnd(36)}║
+        ║   WebSocket: Enabled${' '.padEnd(30)}║
         ║                                                   ║
         ║   API: http://localhost:${PORT}/api/${config.apiVersion.padEnd(16)}║
         ║   Docs: http://localhost:${PORT}/api-docs${' '.repeat(15)}║
+        ║   Socket: ws://localhost:${PORT}${' '.repeat(19)}║
         ║                                                   ║
         ╚═══════════════════════════════════════════════════╝
       `);

@@ -36,6 +36,37 @@ export class SubmissionController {
     }
   }
 
+  async getByClass(req: Request, res: Response) {
+    try {
+      const { classId } = req.params;
+      const status = req.query.status as string | undefined;
+      const latestOnly = req.query.latestOnly === 'true'; // Default to false
+      
+      console.log('=== GET SUBMISSIONS BY CLASS ===');
+      console.log('ClassId:', classId);
+      console.log('Status filter:', status);
+      console.log('LatestOnly:', latestOnly);
+      
+      const submissions = await submissionService.getByClass(classId, status as any, latestOnly);
+      
+      console.log('Submissions found:', submissions.length);
+      console.log('Submissions details:', submissions.map(s => ({
+        id: s.id,
+        studentId: s.studentId,
+        assignmentId: s.assignmentId,
+        status: s.status,
+        attemptNumber: s.attemptNumber,
+        studentName: s.student?.user ? `${s.student.user.firstName} ${s.student.user.lastName}` : 'N/A',
+        assignmentTitle: s.assignment?.title || 'N/A'
+      })));
+      
+      return ResponseUtil.success(res, 'Success', submissions);
+    } catch (error: any) {
+      console.error('Error in getByClass:', error);
+      return ResponseUtil.error(res, error.message, 400);
+    }
+  }
+
   async getByStudent(req: Request, res: Response) {
     try {
       const { studentId } = req.params;

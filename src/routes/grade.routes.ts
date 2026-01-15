@@ -35,6 +35,9 @@ router.get('/submission/:submissionId', gradeController.getBySubmission);
 // Get grades by student
 router.get('/student/:studentId', validateRequest(getGradesByStudentSchema), gradeController.getByStudent);
 
+// Get all grades for a class
+router.get('/class/:classId', gradeController.getByClass);
+
 // Update a grade
 router.put('/:id', validateRequest(updateGradeSchema), gradeController.update);
 

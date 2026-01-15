@@ -172,6 +172,90 @@ export class SubmissionService {
   }
 
   /**
+   * Get all submissions by class
+   */
+  async getByClass(classId: string, status?: SubmissionStatus, latestOnly = false) {
+    const where: any = {
+      assignment: {
+        lesson: {
+          classId,
+        },
+      },
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    const includeClause = {
+      assignment: {
+        include: {
+          lesson: {
+            include: {
+              class: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      student: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              profilePicture: true,
+            },
+          },
+        },
+      },
+      grade: true,
+    };
+
+    if (latestOnly) {
+      // Get unique combinations of student and assignment
+      const submissions = await prisma.submission.findMany({
+        where,
+        include: includeClause,
+        orderBy: [
+          { studentId: 'asc' },
+          { assignmentId: 'asc' },
+          { attemptNumber: 'desc' },
+        ],
+      });
+
+      // Filter to get only the latest submission for each student-assignment combination
+      const latestMap = new Map<string, any>();
+      submissions.forEach(submission => {
+        const key = `${submission.studentId}-${submission.assignmentId}`;
+        if (!latestMap.has(key) || submission.attemptNumber > latestMap.get(key).attemptNumber) {
+          latestMap.set(key, submission);
+        }
+      });
+
+      return Array.from(latestMap.values()).sort((a, b) => 
+        new Date(b.submittedAt || b.createdAt).getTime() - new Date(a.submittedAt || a.createdAt).getTime()
+      );
+    }
+
+    // Return all submissions sorted by most recent
+    return await prisma.submission.findMany({
+      where,
+      orderBy: [
+        { submittedAt: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      include: includeClause,
+    });
+  }
+
+  /**
    * Get all submissions by a student
    */
   async getByStudent(studentId: string, classId?: string) {
