@@ -48,8 +48,10 @@ export class LessonController {
     try {
       const { classId } = req.params;
       const includeUnpublished = req.query.includeUnpublished === 'true';
+      const page = req.query.page ? parseInt(req.query.page as string) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       
-      const lessons = await lessonService.getByClass(classId, includeUnpublished);
+      const lessons = await lessonService.getByClass(classId, includeUnpublished, page, limit);
       
       return ResponseUtil.success(res, 'Success', lessons);
     } catch (error: any) {

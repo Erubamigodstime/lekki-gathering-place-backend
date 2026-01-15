@@ -224,7 +224,9 @@ export class MessageService {
   /**
    * Get inbox messages for a user
    */
-  async getInbox(userId: string, unreadOnly = false) {
+  async getInbox(userId: string, unreadOnly = false, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    
     const where: any = {
       receiverId: userId,
       deletedAt: null,
@@ -234,68 +236,107 @@ export class MessageService {
       where.readAt = null;
     }
 
-    return await prisma.message.findMany({
-      where,
-      include: {
-        sender: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
+    const [messages, total] = await Promise.all([
+      prisma.message.findMany({
+        where,
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
+            },
+          },
+          _count: {
+            select: {
+              replies: true,
+            },
           },
         },
-        _count: {
-          select: {
-            replies: true,
-          },
+        orderBy: {
+          createdAt: 'desc',
         },
+        skip,
+        take: limit,
+      }),
+      prisma.message.count({ where }),
+    ]);
+
+    return {
+      data: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        pageSize: limit,
+        totalItems: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrevious: page > 1,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    };
   }
 
   /**
    * Get sent messages for a user
    */
-  async getSent(userId: string) {
-    return await prisma.message.findMany({
-      where: {
-        senderId: userId,
-        deletedAt: null,
-      },
-      include: {
-        receiver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
+  async getSent(userId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    const where = {
+      senderId: userId,
+      deletedAt: null,
+    };
+
+    const [messages, total] = await Promise.all([
+      prisma.message.findMany({
+        where,
+        include: {
+          receiver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
+            },
+          },
+          class: {
+            select: {
+              name: true,
+            },
+          },
+          _count: {
+            select: {
+              replies: true,
+            },
           },
         },
-        class: {
-          select: {
-            name: true,
-          },
+        orderBy: {
+          createdAt: 'desc',
         },
-        _count: {
-          select: {
-            replies: true,
-          },
-        },
+        skip,
+        take: limit,
+      }),
+      prisma.message.count({ where }),
+    ]);
+
+    return {
+      data: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        pageSize: limit,
+        totalItems: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrevious: page > 1,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    };
   }
 
   /**
    * Get class messages
    */
-  async getClassMessages(classId: string, userId: string) {
+  async getClassMessages(classId: string, userId: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    
     // Verify user has access to this class
     const enrollment = await prisma.enrollment.findFirst({
       where: {
@@ -315,97 +356,136 @@ export class MessageService {
       throw new Error('You do not have access to this class');
     }
 
-    return await prisma.message.findMany({
-      where: {
-        classId,
-        deletedAt: null,
-        parentId: null, // Only top-level messages
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
-            role: true,
-          },
-        },
-        replies: {
-          include: {
-            sender: {
-              select: {
-                firstName: true,
-                lastName: true,
-                profilePicture: true,
-              },
+    const where = {
+      classId,
+      deletedAt: null,
+      parentId: null, // Only top-level messages
+    };
+
+    const [messages, total] = await Promise.all([
+      prisma.message.findMany({
+        where,
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
+              role: true,
             },
           },
-          orderBy: {
-            createdAt: 'asc',
+          replies: {
+            include: {
+              sender: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  profilePicture: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
+          },
+          _count: {
+            select: {
+              replies: true,
+            },
           },
         },
-        _count: {
-          select: {
-            replies: true,
-          },
+        orderBy: {
+          createdAt: 'desc',
         },
+        skip,
+        take: limit,
+      }),
+      prisma.message.count({ where }),
+    ]);
+
+    return {
+      data: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        pageSize: limit,
+        totalItems: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrevious: page > 1,
       },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    };
   }
 
   /**
    * Get conversation between two users
    */
-  async getConversation(userId1: string, userId2: string) {
-    return await prisma.message.findMany({
-      where: {
-        OR: [
-          { senderId: userId1, receiverId: userId2 },
-          { senderId: userId2, receiverId: userId1 },
-        ],
-        deletedAt: null,
-        parentId: null, // Only top-level messages
-      },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
-          },
-        },
-        receiver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            profilePicture: true,
-          },
-        },
-        replies: {
-          include: {
-            sender: {
-              select: {
-                firstName: true,
-                lastName: true,
-                profilePicture: true,
-              },
+  async getConversation(userId1: string, userId2: string, page = 1, limit = 50) {
+    const skip = (page - 1) * limit;
+    const where = {
+      OR: [
+        { senderId: userId1, receiverId: userId2 },
+        { senderId: userId2, receiverId: userId1 },
+      ],
+      deletedAt: null,
+      parentId: null, // Only top-level messages
+    };
+
+    const [messages, total] = await Promise.all([
+      prisma.message.findMany({
+        where,
+        include: {
+          sender: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
             },
           },
-          orderBy: {
-            createdAt: 'asc',
+          receiver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              profilePicture: true,
+            },
+          },
+          replies: {
+            include: {
+              sender: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  profilePicture: true,
+                },
+              },
+            },
+            orderBy: {
+              createdAt: 'asc',
+            },
           },
         },
+        orderBy: {
+          createdAt: 'asc',
+        },
+        skip,
+        take: limit,
+      }),
+      prisma.message.count({ where }),
+    ]);
+
+    return {
+      data: messages,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        pageSize: limit,
+        totalItems: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrevious: page > 1,
       },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    });
+    };
   }
 
   /**

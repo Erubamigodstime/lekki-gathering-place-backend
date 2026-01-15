@@ -13,10 +13,18 @@ export class WeekProgressController {
     try {
       const { classId, studentId, weekNumber } = req.body;
 
-      // Verify the student is submitting their own progress
-      const student = await prisma.student.findFirst({
-        where: { userId: studentId },
-      });
+      // OPTIMIZED: Parallelize independent queries
+      const [student, lessonData] = await Promise.all([
+        prisma.student.findFirst({
+          where: { userId: studentId },
+        }),
+        prisma.lesson.findFirst({
+          where: {
+            classId,
+            weekNumber,
+          },
+        }),
+      ]);
 
       if (!student) {
         return ResponseUtil.error(res, 'Student not found', 404);
@@ -36,13 +44,8 @@ export class WeekProgressController {
       }
 
       // Get or create lesson for this week
-      let lesson = await prisma.lesson.findFirst({
-        where: {
-          classId,
-          weekNumber,
-        },
-      });
-
+      let lesson = lessonData;
+      
       // If no lesson exists, create a placeholder
       if (!lesson) {
         lesson = await prisma.lesson.create({

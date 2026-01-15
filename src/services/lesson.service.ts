@@ -3,6 +3,21 @@ import { CreateLessonDTO, UpdateLessonDTO, LessonWithRelations } from '../types'
 
 const prisma = new PrismaClient();
 
+// Lazy load cache service to avoid circular dependency
+let cacheService: any = null;
+const getCacheService = async () => {
+  if (!cacheService) {
+    try {
+      const module = await import('./cache.service');
+      cacheService = module.default || module.cacheService;
+    } catch (error) {
+      // Cache service not available, continue without caching
+      return null;
+    }
+  }
+  return cacheService;
+};
+
 export class LessonService {
   /**
    * Create a new lesson for a class
@@ -51,6 +66,49 @@ export class LessonService {
    * Get lesson by ID with optional relations
    */
   async getById(id: string, includeRelations = false): Promise<LessonWithRelations | null> {
+    const cache = await getCacheService();
+    
+    // Use cache if available
+    if (cache) {
+      const cacheKey = cache.keys.lesson(id);
+      
+      return await cache.getOrSet(
+        cacheKey,
+        async () => {
+          return await prisma.lesson.findUnique({
+            where: { id },
+            include: includeRelations ? {
+              class: true,
+              courseMaterials: {
+                orderBy: { orderIndex: 'asc' },
+              },
+              assignments: {
+                where: { isPublished: true },
+                orderBy: { dueDate: 'asc' },
+              },
+              weekProgress: {
+                include: {
+                  student: {
+                    include: {
+                      user: {
+                        select: {
+                          firstName: true,
+                          lastName: true,
+                          email: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            } : undefined,
+          });
+        },
+        cache.ttl.medium
+      );
+    }
+    
+    // Fallback without cache
     return await prisma.lesson.findUnique({
       where: { id },
       include: includeRelations ? {
@@ -86,14 +144,59 @@ export class LessonService {
    */
   async getByClass(
     classId: string,
-    includeUnpublished = false
-  ): Promise<Lesson[]> {
+    includeUnpublished = false,
+    page?: number,
+    limit?: number
+  ): Promise<Lesson[] | { data: Lesson[]; pagination: any }> {
     const where: any = { classId };
     
     if (!includeUnpublished) {
       where.isPublished = true;
     }
 
+    // If pagination is requested
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      
+      const [lessons, total] = await Promise.all([
+        prisma.lesson.findMany({
+          where,
+          orderBy: { weekNumber: 'asc' },
+          include: {
+            courseMaterials: {
+              orderBy: { orderIndex: 'asc' },
+            },
+            assignments: {
+              where: includeUnpublished ? {} : { isPublished: true },
+            },
+            _count: {
+              select: {
+                weekProgress: {
+                  where: { completed: true },
+                },
+              },
+            },
+          },
+          skip,
+          take: limit,
+        }),
+        prisma.lesson.count({ where }),
+      ]);
+
+      return {
+        data: lessons,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(total / limit),
+          pageSize: limit,
+          totalItems: total,
+          hasNext: page < Math.ceil(total / limit),
+          hasPrevious: page > 1,
+        },
+      };
+    }
+
+    // Return all lessons without pagination
     return await prisma.lesson.findMany({
       where,
       orderBy: { weekNumber: 'asc' },
@@ -164,7 +267,7 @@ export class LessonService {
       }
     }
 
-    return await prisma.lesson.update({
+    const updated = await prisma.lesson.update({
       where: { id },
       data: {
         weekNumber: data.weekNumber,
@@ -178,16 +281,38 @@ export class LessonService {
         isPublished: data.isPublished,
       },
     });
+
+    // Invalidate caches
+    await Promise.all([
+      cacheService.del(cacheService.keys.lesson(id)),
+      cacheService.del(cacheService.keys.lessonsByClass(lesson.classId)),
+      cacheService.invalidateClass(lesson.classId),
+    ]);
+
+    return updated;
   }
 
   /**
    * Publish a lesson (make it visible to students)
    */
   async publish(id: string): Promise<Lesson> {
-    return await prisma.lesson.update({
+    const lesson = await prisma.lesson.findUnique({ where: { id }, select: { classId: true } });
+    
+    const published = await prisma.lesson.update({
       where: { id },
       data: { isPublished: true },
     });
+
+    // Invalidate caches
+    if (lesson) {
+      await Promise.all([
+        cacheService.del(cacheService.keys.lesson(id)),
+        cacheService.del(cacheService.keys.lessonsByClass(lesson.classId)),
+        cacheService.invalidateClass(lesson.classId),
+      ]);
+    }
+
+    return published;
   }
 
   /**

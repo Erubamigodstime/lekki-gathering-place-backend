@@ -68,14 +68,28 @@ export class GradeService {
       where: { id },
       include: {
         submission: {
-          include: {
+          select: {
+            id: true,
+            content: true,
+            fileUrl: true,
+            submittedAt: true,
+            attemptNumber: true,
             assignment: {
-              include: {
-                lesson: true,
+              select: {
+                id: true,
+                title: true,
+                maxPoints: true,
+                lesson: {
+                  select: {
+                    weekNumber: true,
+                    title: true,
+                  },
+                },
               },
             },
             student: {
-              include: {
+              select: {
+                id: true,
                 user: {
                   select: {
                     firstName: true,
@@ -120,7 +134,9 @@ export class GradeService {
   /**
    * Get all grades by a student
    */
-  async getByStudent(studentId: string, classId?: string) {
+  async getByStudent(studentId: string, classId?: string, page = 1, limit = 20) {
+    const skip = (page - 1) * limit;
+    
     const where: any = {
       submission: {
         studentId,
@@ -135,19 +151,29 @@ export class GradeService {
       };
     }
 
-    return await prisma.grade.findMany({
-      where,
-      include: {
-        submission: {
-          include: {
-            assignment: {
-              include: {
-                lesson: {
-                  include: {
-                    class: {
-                      select: {
-                        id: true,
-                        name: true,
+    const [grades, total] = await Promise.all([
+      prisma.grade.findMany({
+        where,
+        include: {
+          submission: {
+            select: {
+              id: true,
+              submittedAt: true,
+              attemptNumber: true,
+              assignment: {
+                select: {
+                  id: true,
+                  title: true,
+                  maxPoints: true,
+                  lesson: {
+                    select: {
+                      weekNumber: true,
+                      title: true,
+                      class: {
+                        select: {
+                          id: true,
+                          name: true,
+                        },
                       },
                     },
                   },
@@ -155,73 +181,114 @@ export class GradeService {
               },
             },
           },
-        },
-        gradedBy: {
-          select: {
-            firstName: true,
-            lastName: true,
+          gradedBy: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
           },
         },
+        orderBy: {
+          gradedAt: 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      prisma.grade.count({ where }),
+    ]);
+
+    return {
+      data: grades,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        pageSize: limit,
+        totalItems: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrevious: page > 1,
       },
-      orderBy: {
-        gradedAt: 'desc',
-      },
-    });
+    };
   }
 
   /**
    * Get all grades for a class
    */
-  async getByClass(classId: string) {
-    return await prisma.grade.findMany({
-      where: {
-        submission: {
-          assignment: {
-            lesson: {
-              classId,
-            },
+  async getByClass(classId: string, page = 1, limit = 50) {
+    const skip = (page - 1) * limit;
+    const where = {
+      submission: {
+        assignment: {
+          lesson: {
+            classId,
           },
         },
       },
-      include: {
-        submission: {
-          include: {
-            student: {
-              include: {
-                user: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
-                    email: true,
+    };
+
+    const [grades, total] = await Promise.all([
+      prisma.grade.findMany({
+        where,
+        include: {
+          submission: {
+            select: {
+              id: true,
+              submittedAt: true,
+              student: {
+                select: {
+                  id: true,
+                  user: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                      email: true,
+                    },
+                  },
+                },
+              },
+              assignment: {
+                select: {
+                  id: true,
+                  title: true,
+                  maxPoints: true,
+                  lesson: {
+                    select: {
+                      weekNumber: true,
+                      title: true,
+                    },
                   },
                 },
               },
             },
-            assignment: {
-              include: {
-                lesson: {
-                  select: {
-                    weekNumber: true,
-                    title: true,
-                  },
-                },
-              },
+          },
+          gradedBy: {
+            select: {
+              firstName: true,
+              lastName: true,
             },
           },
         },
-        gradedBy: {
-          select: {
-            firstName: true,
-            lastName: true,
+        orderBy: [
+          {
+            gradedAt: 'desc',
           },
-        },
+        ],
+        skip,
+        take: limit,
+      }),
+      prisma.grade.count({ where }),
+    ]);
+
+    return {
+      data: grades,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        pageSize: limit,
+        totalItems: total,
+        hasNext: page < Math.ceil(total / limit),
+        hasPrevious: page > 1,
       },
-      orderBy: [
-        {
-          gradedAt: 'desc',
-        },
-      ],
-    });
+    };
   }
 
   /**

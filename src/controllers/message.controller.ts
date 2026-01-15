@@ -52,7 +52,9 @@ export class MessageController {
     try {
       const userId = req.user!.id;
       const unreadOnly = req.query.unreadOnly === 'true';
-      const messages = await messageService.getInbox(userId, unreadOnly);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const messages = await messageService.getInbox(userId, unreadOnly, page, limit);
       return ResponseUtil.success(res, 'Success', messages);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);
@@ -62,7 +64,9 @@ export class MessageController {
   async getSent(req: Request, res: Response) {
     try {
       const userId = req.user!.id;
-      const messages = await messageService.getSent(userId);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const messages = await messageService.getSent(userId, page, limit);
       return ResponseUtil.success(res, 'Success', messages);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);
@@ -73,7 +77,9 @@ export class MessageController {
     try {
       const userId = req.user!.id;
       const { classId } = req.params;
-      const messages = await messageService.getClassMessages(classId, userId);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const messages = await messageService.getClassMessages(classId, userId, page, limit);
       return ResponseUtil.success(res, 'Success', messages);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);
@@ -84,7 +90,9 @@ export class MessageController {
     try {
       const userId = req.user!.id;
       const { userId: otherUserId } = req.params;
-      const messages = await messageService.getConversation(userId, otherUserId);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const messages = await messageService.getConversation(userId, otherUserId, page, limit);
       return ResponseUtil.success(res, 'Success', messages);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);

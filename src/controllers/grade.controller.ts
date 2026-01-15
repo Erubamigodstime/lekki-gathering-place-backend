@@ -41,7 +41,9 @@ export class GradeController {
     try {
       const { studentId } = req.params;
       const classId = req.query.classId as string | undefined;
-      const grades = await gradeService.getByStudent(studentId, classId);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const grades = await gradeService.getByStudent(studentId, classId, page, limit);
       return ResponseUtil.success(res, 'Success', grades);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);
@@ -51,7 +53,9 @@ export class GradeController {
   async getByClass(req: Request, res: Response) {
     try {
       const { classId } = req.params;
-      const grades = await gradeService.getByClass(classId);
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const grades = await gradeService.getByClass(classId, page, limit);
       return ResponseUtil.success(res, 'Success', grades);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);

@@ -44,6 +44,43 @@ class RedisClient {
     return this.client;
   }
 
+  // Proxy methods for easy access
+  async get(key: string): Promise<string | null> {
+    return this.client ? await this.client.get(key) : null;
+  }
+
+  async setex(key: string, seconds: number, value: string): Promise<'OK' | null> {
+    return this.client ? await this.client.setex(key, seconds, value) : null;
+  }
+
+  async del(...keys: string[]): Promise<number> {
+    return this.client ? await this.client.del(...keys) : 0;
+  }
+
+  async exists(...keys: string[]): Promise<number> {
+    return this.client ? await this.client.exists(...keys) : 0;
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    return this.client ? await this.client.keys(pattern) : [];
+  }
+
+  async info(section?: string): Promise<string> {
+    return this.client ? await this.client.info(section) : '';
+  }
+
+  async flushdb(): Promise<'OK'> {
+    return this.client ? await this.client.flushdb() : 'OK';
+  }
+
+  async expire(key: string, seconds: number): Promise<number> {
+    return this.client ? await this.client.expire(key, seconds) : 0;
+  }
+
+  async ttl(key: string): Promise<number> {
+    return this.client ? await this.client.ttl(key) : -1;
+  }
+
   async disconnect() {
     if (this.client) {
       await this.client.quit();

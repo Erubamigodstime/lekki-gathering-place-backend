@@ -75,16 +75,30 @@ export class SubmissionService {
       where: { id },
       include: {
         assignment: {
-          include: {
+          select: {
+            id: true,
+            title: true,
+            instructions: true,
+            maxPoints: true,
+            dueDate: true,
             lesson: {
-              include: {
-                class: true,
+              select: {
+                id: true,
+                weekNumber: true,
+                title: true,
+                class: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
               },
             },
           },
         },
         student: {
-          include: {
+          select: {
+            id: true,
             user: {
               select: {
                 id: true,
@@ -97,7 +111,16 @@ export class SubmissionService {
           },
         },
         grade: {
-          include: {
+          select: {
+            id: true,
+            points: true,
+            maxPoints: true,
+            percentage: true,
+            instructorComment: true,
+            feedback: true,
+            status: true,
+            gradedAt: true,
+            publishedAt: true,
             gradedBy: {
               select: {
                 firstName: true,
@@ -116,36 +139,51 @@ export class SubmissionService {
    */
   async getByAssignment(assignmentId: string, latestOnly = false) {
     if (latestOnly) {
-      // Get latest submission for each student
-      const students = await prisma.submission.groupBy({
-        by: ['studentId'],
-        where: { assignmentId },
-      });
+      // OPTIMIZED: Use raw SQL with DISTINCT ON to avoid N+1 query problem
+      // This replaces groupBy + Promise.all which was causing 10-100x slowdown
+      const latestSubmissions = await prisma.$queryRaw<any[]>`
+        SELECT DISTINCT ON (s.student_id) 
+          s.*,
+          json_build_object(
+            'id', st.id,
+            'userId', st.user_id,
+            'user', json_build_object(
+              'firstName', u.first_name,
+              'lastName', u.last_name,
+              'email', u.email
+            )
+          ) as student,
+          json_build_object(
+            'id', g.id,
+            'points', g.points,
+            'maxPoints', g.max_points,
+            'percentage', g.percentage,
+            'status', g.status
+          ) as grade
+        FROM submissions s
+        LEFT JOIN students st ON s.student_id = st.id
+        LEFT JOIN users u ON st.user_id = u.id
+        LEFT JOIN grades g ON s.id = g.submission_id
+        WHERE s.assignment_id = ${assignmentId}
+        ORDER BY s.student_id, s.attempt_number DESC
+      `;
 
-      const latestSubmissions = await Promise.all(
-        students.map(({ studentId }) =>
-          prisma.submission.findFirst({
-            where: { assignmentId, studentId },
-            orderBy: { attemptNumber: 'desc' },
-            include: {
-              student: {
-                include: {
-                  user: {
-                    select: {
-                      firstName: true,
-                      lastName: true,
-                      email: true,
-                    },
-                  },
-                },
-              },
-              grade: true,
-            },
-          })
-        )
-      );
-
-      return latestSubmissions.filter(Boolean);
+      // Transform to match expected Prisma types
+      return latestSubmissions.map(row => ({
+        id: row.id,
+        assignmentId: row.assignment_id,
+        studentId: row.student_id,
+        content: row.content,
+        fileUrl: row.file_url,
+        metadata: row.metadata,
+        status: row.status,
+        submittedAt: row.submitted_at,
+        attemptNumber: row.attempt_number,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        student: row.student,
+        grade: row.grade.id ? row.grade : null,
+      }));
     }
 
     return await prisma.submission.findMany({
