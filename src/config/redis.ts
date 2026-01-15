@@ -7,10 +7,14 @@ class RedisClient {
 
   connect() {
     try {
+      // Check if using Upstash (cloud Redis) - requires TLS
+      const isUpstash = config.redis.host.includes('upstash.io');
+      
       this.client = new Redis({
         host: config.redis.host,
         port: config.redis.port,
         password: config.redis.password,
+        tls: isUpstash ? {} : undefined, // Enable TLS for Upstash
         retryStrategy: (times: number) => {
           const delay = Math.min(times * 50, 2000);
           return delay;

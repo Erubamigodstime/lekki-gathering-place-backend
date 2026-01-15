@@ -3,11 +3,6 @@ import { Server as HttpServer } from 'http';
 import jwt from 'jsonwebtoken';
 import { logger } from './logger';
 
-interface SocketUser {
-  userId: string;
-  socketId: string;
-}
-
 class SocketService {
   private io: Server | null = null;
   private userSockets: Map<string, Set<string>> = new Map(); // userId -> Set<socketId>
