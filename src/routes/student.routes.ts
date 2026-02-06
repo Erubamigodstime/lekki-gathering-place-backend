@@ -11,6 +11,55 @@ const router = Router();
 
 /**
  * @swagger
+ * /students/user/{userId}:
+ *   get:
+ *     summary: Get student by user ID
+ *     tags: [Students]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  '/user/:userId',
+  authenticate,
+  asyncHandler(async (req, res) => {
+    const { userId } = req.params;
+
+    const student = await prisma.student.findFirst({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            role: true,
+          },
+        },
+        enrollments: {
+          include: {
+            class: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!student) {
+      return ResponseUtil.error(res, 'Student not found', 404);
+    }
+
+    ResponseUtil.success(res, 'Student retrieved successfully', student);
+  })
+);
+
+/**
+ * @swagger
  * /students:
  *   get:
  *     summary: Get all students

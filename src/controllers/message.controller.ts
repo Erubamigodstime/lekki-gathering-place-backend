@@ -167,12 +167,73 @@ export class MessageController {
     }
   }
 
+  async getMessageableUsers(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { classId } = req.query;
+
+      const users = await messageService.getMessageableUsers(
+        userId,
+        classId as string | undefined
+      );
+      return ResponseUtil.success(res, 'Messageable users retrieved successfully', users);
+    } catch (error: any) {
+      return ResponseUtil.error(res, error.message, 400);
+    }
+  }
+
   async getConversationThread(req: Request, res: Response) {
     try {
       const userId = req.user!.id;
       const { userId: otherUserId } = req.params;
       const messages = await messageService.getConversationThread(userId, otherUserId);
       return ResponseUtil.success(res, 'Conversation thread fetched successfully', messages);
+    } catch (error: any) {
+      return ResponseUtil.error(res, error.message, 400);
+    }
+  }
+
+  // ENTERPRISE: Mark entire conversation as read
+  async markConversationRead(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      // Support both :partnerId and :userId params for backwards compatibility
+      const partnerId = req.params.partnerId || req.params.userId;
+      
+      if (!partnerId) {
+        return ResponseUtil.error(res, 'Partner ID is required', 400);
+      }
+      
+      await messageService.markConversationRead(userId, partnerId);
+      return ResponseUtil.success(res, 'Conversation marked as read', null);
+    } catch (error: any) {
+      return ResponseUtil.error(res, error.message, 400);
+    }
+  }
+
+  // ENTERPRISE: Get message queue statistics
+  async getQueueStats(_req: Request, res: Response) {
+    try {
+      const { messageQueueService } = await import('../services/messageQueue.service');
+      const stats = await messageQueueService.getQueueStats();
+      return ResponseUtil.success(res, 'Queue statistics fetched successfully', stats);
+    } catch (error: any) {
+      return ResponseUtil.error(res, error.message, 500);
+    }
+  }
+
+  // ENTERPRISE: Sync missed messages on reconnection
+  async syncMessages(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { partnerId, lastSequence } = req.body;
+      
+      if (!partnerId || lastSequence === undefined) {
+        return ResponseUtil.error(res, 'partnerId and lastSequence are required', 400);
+      }
+
+      const syncData = await messageService.syncMissedMessages(userId, partnerId, lastSequence);
+      return ResponseUtil.success(res, 'Messages synced successfully', syncData);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);
     }

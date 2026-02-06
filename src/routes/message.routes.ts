@@ -18,11 +18,17 @@ router.use(authMiddleware);
 // Get conversations list (WhatsApp-like inbox)
 router.get('/conversations', messageController.getConversations);
 
+// Get all users current user can message (for inbox contact list)
+router.get('/users', messageController.getMessageableUsers);
+
 // Search users to message
 router.get('/search/users', messageController.searchUsers);
 
 // Get conversation thread with specific user
 router.get('/thread/:userId', messageController.getConversationThread);
+
+// Mark conversation as read (legacy route for backwards compatibility)
+router.post('/thread/:userId/mark-read', messageController.markConversationRead);
 
 // Get unread message count
 router.get('/unread/count', messageController.getUnreadCount);
@@ -56,6 +62,15 @@ router.post('/:id/read', validateRequest(markMessageReadSchema), messageControll
 
 // Mark all messages as read
 router.post('/read/all', messageController.markAllRead);
+
+// ENTERPRISE: Mark conversation as read (batch update)
+router.post('/conversation/:partnerId/read', messageController.markConversationRead);
+
+// ENTERPRISE: Get queue statistics (monitoring)
+router.get('/queue-stats', messageController.getQueueStats);
+
+// ENTERPRISE: Sync missed messages (reconnection recovery)
+router.post('/sync', messageController.syncMessages);
 
 // Delete a message (soft delete)
 router.delete('/:id', messageController.delete);

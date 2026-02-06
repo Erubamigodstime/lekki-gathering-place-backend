@@ -143,6 +143,10 @@ model User {
   receivedMessages Message[] @relation("MessageReceiver")
   grades           Grade[]   @relation("GradedBy")
 
+  // Conversation relations (for enterprise messaging)
+  conversationsAsParticipant1 Conversation[] @relation("ConversationParticipant1")
+  conversationsAsParticipant2 Conversation[] @relation("ConversationParticipant2")
+
   @@index([email])
   @@index([role])
   @@index([wardId])
@@ -589,10 +593,18 @@ model Message {
   classId String?
   class   Class?  @relation(fields: [classId], references: [id], onDelete: Cascade)
 
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
   // Message details
   content     String      @db.Text
   type        MessageType @default(DIRECT)
   attachments Json? // File attachments metadata
+
+  // Enterprise features - Sequencing and delivery
+  sequenceNumber Int? // Sequence number per conversation for ordering (only for DIRECT messages)
+  deliveredAt    DateTime? // When message was delivered to recipient
+  serverTimestamp DateTime @default(now()) // Server-side timestamp for reliable ordering
 
   // Threading
   parentId String?
@@ -606,6 +618,10 @@ model Message {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Enterprise-level composite indexes for optimal query performance
+  @@index([conversationId, sequenceNumber]) // Fast message ordering per conversation
+  @@index([senderId, receiverId, serverTimestamp]) // Fast conversation lookup
+  @@index([receiverId, senderId, serverTimestamp]) // Reverse conversation lookup
   @@index([senderId])
   @@index([receiverId])
   @@index([classId])
@@ -616,6 +632,42 @@ model Message {
   @@index([receiverId, readAt])
   @@index([senderId, createdAt])
   @@map("messages")
+}
+
+// Conversation metadata table for enterprise-level performance
+model Conversation {
+  id String @id @default(uuid())
+
+  // Participants
+  participant1Id String
+  participant1   User   @relation("ConversationParticipant1", fields: [participant1Id], references: [id], onDelete: Cascade)
+
+  participant2Id String
+  participant2   User   @relation("ConversationParticipant2", fields: [participant2Id], references: [id], onDelete: Cascade)
+
+  // Conversation metadata
+  lastMessageAt      DateTime?
+  lastMessagePreview String? @db.Text
+  lastMessageSenderId String?
+  messageCount       Int      @default(0)
+  currentSequence    Int      @default(0) // Current sequence number for this conversation
+
+  // Read status
+  participant1LastRead Int @default(0) // Last sequence number read by participant1
+  participant2LastRead Int @default(0) // Last sequence number read by participant2
+
+  // Relations
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Unique constraint to prevent duplicate conversations
+  @@unique([participant1Id, participant2Id])
+  @@index([participant1Id, lastMessageAt])
+  @@index([participant2Id, lastMessageAt])
+  @@index([lastMessageAt])
+  @@map("conversations")
 }
 
 model Certificate {

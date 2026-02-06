@@ -41,7 +41,23 @@ export class AssignmentController {
     try {
       const { classId } = req.params;
       const includeUnpublished = req.query.includeUnpublished === 'true';
-      const assignments = await assignmentService.getByClass(classId, includeUnpublished);
+      const includeSubmission = req.query.includeSubmission === 'true';
+      const userId = (req as any).user?.id;
+      
+      let assignments;
+      
+      if (includeSubmission && userId) {
+        // Get student ID from user ID
+        const student = await assignmentService.getStudentByUserId(userId);
+        if (student) {
+          assignments = await assignmentService.getForStudent(classId, student.id);
+        } else {
+          assignments = await assignmentService.getByClass(classId, includeUnpublished);
+        }
+      } else {
+        assignments = await assignmentService.getByClass(classId, includeUnpublished);
+      }
+      
       return ResponseUtil.success(res, 'Success', assignments);
     } catch (error: any) {
       return ResponseUtil.error(res, error.message, 400);

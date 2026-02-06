@@ -157,6 +157,16 @@ export class GradeController {
       return ResponseUtil.error(res, error.message, 400);
     }
   }
+
+  async publishAllClassGrades(req: Request, res: Response) {
+    try {
+      const { classId } = req.params;
+      const result = await gradeService.publishAllClassGrades(classId);
+      return ResponseUtil.success(res, `Published ${result.published} grades successfully`, result);
+    } catch (error: any) {
+      return ResponseUtil.error(res, error.message, 400);
+    }
+  }
 }
 
 export default new GradeController();

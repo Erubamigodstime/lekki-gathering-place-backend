@@ -283,11 +283,14 @@ export class LessonService {
     });
 
     // Invalidate caches
-    await Promise.all([
-      cacheService.del(cacheService.keys.lesson(id)),
-      cacheService.del(cacheService.keys.lessonsByClass(lesson.classId)),
-      cacheService.invalidateClass(lesson.classId),
-    ]);
+    const cache = await getCacheService();
+    if (cache) {
+      await Promise.all([
+        cache.del(cache.keys.lesson(id)),
+        cache.del(cache.keys.lessonsByClass(lesson.classId)),
+        cache.invalidateClass(lesson.classId),
+      ]);
+    }
 
     return updated;
   }
@@ -305,11 +308,14 @@ export class LessonService {
 
     // Invalidate caches
     if (lesson) {
-      await Promise.all([
-        cacheService.del(cacheService.keys.lesson(id)),
-        cacheService.del(cacheService.keys.lessonsByClass(lesson.classId)),
-        cacheService.invalidateClass(lesson.classId),
-      ]);
+      const cache = await getCacheService();
+      if (cache) {
+        await Promise.all([
+          cache.del(cache.keys.lesson(id)),
+          cache.del(cache.keys.lessonsByClass(lesson.classId)),
+          cache.invalidateClass(lesson.classId),
+        ]);
+      }
     }
 
     return published;

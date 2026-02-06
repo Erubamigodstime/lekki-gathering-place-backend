@@ -6,7 +6,18 @@ import { CreateSubmissionDTO, UpdateSubmissionDTO } from '../types';
 export class SubmissionController {
   async create(req: Request, res: Response) {
     try {
-      const data: CreateSubmissionDTO = req.body;
+      const userId = (req as any).user!.id;
+      
+      // Get student ID from user ID
+      const student = await submissionService.getStudentByUserId(userId);
+      if (!student) {
+        return ResponseUtil.error(res, 'Student profile not found', 404);
+      }
+      
+      const data: CreateSubmissionDTO = {
+        ...req.body,
+        studentId: student.id,
+      };
       const submission = await submissionService.create(data);
       return ResponseUtil.success(res, 'Submission created successfully', submission, 201);
     } catch (error: any) {

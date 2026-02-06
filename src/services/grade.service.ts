@@ -165,6 +165,8 @@ export class GradeService {
                   id: true,
                   title: true,
                   maxPoints: true,
+                  dueDate: true,
+                  type: true,
                   lesson: {
                     select: {
                       weekNumber: true,
@@ -250,6 +252,8 @@ export class GradeService {
                   id: true,
                   title: true,
                   maxPoints: true,
+                  dueDate: true,
+                  type: true,
                   lesson: {
                     select: {
                       weekNumber: true,
@@ -658,6 +662,7 @@ export class GradeService {
       lesson.assignments.map(assignment => ({
         ...assignment,
         lessonTitle: lesson.title,
+        week: lesson.weekNumber,
       }))
     );
 
@@ -762,6 +767,7 @@ export class GradeService {
         id: a.id,
         title: a.title,
         lessonTitle: a.lessonTitle,
+        week: a.week,
         maxPoints: a.maxPoints,
         dueDate: a.dueDate,
         type: a.type,
@@ -809,6 +815,66 @@ export class GradeService {
     // Update enrollment points for affected students
     const uniqueStudents = new Map<string, string>();
     grades.forEach(grade => {
+      const lessonId = grade.submission.assignment.lessonId;
+      uniqueStudents.set(grade.submission.studentId, lessonId);
+    });
+
+    for (const [studentId, lessonId] of uniqueStudents) {
+      await this.updateEnrollmentPoints(studentId, lessonId);
+    }
+
+    return { published: gradeIds.length };
+  }
+
+  /**
+   * Publish all pending grades for a class
+   */
+  async publishAllClassGrades(classId: string) {
+    // Get all pending grades for this class
+    const pendingGrades = await prisma.grade.findMany({
+      where: {
+        status: GradeStatus.PENDING,
+        submission: {
+          assignment: {
+            lesson: {
+              classId,
+            },
+          },
+        },
+      },
+      include: {
+        submission: {
+          include: {
+            assignment: {
+              include: {
+                lesson: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (pendingGrades.length === 0) {
+      return { published: 0, message: 'No pending grades to publish' };
+    }
+
+    const gradeIds = pendingGrades.map(g => g.id);
+
+    // Update all grades to published
+    await prisma.grade.updateMany({
+      where: {
+        id: { in: gradeIds },
+      },
+      data: {
+        status: GradeStatus.PUBLISHED,
+        publishedAt: new Date(),
+      },
+    });
+
+    // Update enrollment points for affected students
+    const uniqueStudents = new Map<string, string>();
+    pendingGrades.forEach(grade => {
       const lessonId = grade.submission.assignment.lessonId;
       uniqueStudents.set(grade.submission.studentId, lessonId);
     });

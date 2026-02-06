@@ -135,9 +135,9 @@ export const getAssignmentsForStudentSchema = z.object({
 export const createSubmissionSchema = z.object({
   body: z.object({
     assignmentId: z.string().uuid('Invalid assignment ID'),
-    studentId: z.string().uuid('Invalid student ID'),
+    studentId: z.string().uuid('Invalid student ID').optional(), // Optional since it comes from auth
     content: z.string().max(50000).optional(),
-    fileUrl: z.string().url('Invalid file URL').optional(),
+    fileUrl: z.string().optional(), // Remove URL validation to allow cloudinary URLs
     metadata: z.any().optional(),
     status: z.nativeEnum(SubmissionStatus).optional(),
   }).refine(data => data.content || data.fileUrl, {
@@ -241,7 +241,9 @@ export const getGradesByStudentSchema = z.object({
   }),
   query: z.object({
     classId: z.string().uuid().optional(),
-  }),
+    page: z.string().optional(),
+    limit: z.string().optional(),
+  }).optional(),
 });
 
 export const publishGradeSchema = z.object({
@@ -303,6 +305,11 @@ export const getClassMessagesSchema = z.object({
   params: z.object({
     classId: z.string().uuid('Invalid class ID'),
   }),
+  query: z.object({
+    unread: z.string().optional(),
+    page: z.string().optional(),
+    limit: z.string().optional(),
+  }).optional(),
 });
 
 export const markMessageReadSchema = z.object({

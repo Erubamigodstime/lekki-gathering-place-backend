@@ -3,6 +3,7 @@ import { AuthUtil } from '@/utils/auth.util';
 import { AppError } from '@/middleware/error.middleware';
 import { UserRole } from '@prisma/client';
 import crypto from 'crypto';
+import emailService from '@/services/email.service';
 
 interface RegisterData {
   email: string;
@@ -88,11 +89,31 @@ export class AuthService {
         });
       }
     } else if (data.role === UserRole.STUDENT) {
-      await prisma.student.create({
+      const student = await prisma.student.create({
         data: {
           userId: user.id,
         },
       });
+
+      // Auto-enroll in Public Speaking class (mandatory for all students)
+      const publicSpeakingClass = await prisma.class.findFirst({
+        where: {
+          name: 'Public Speaking & Communication Skills',
+          status: 'ACTIVE',
+        },
+      });
+
+      if (publicSpeakingClass) {
+        await prisma.enrollment.create({
+          data: {
+            classId: publicSpeakingClass.id,
+            studentId: student.id,
+            status: 'APPROVED',
+            approvedAt: new Date(),
+          },
+        });
+        console.log(`Auto-enrolled student ${user.email} in Public Speaking class`);
+      }
     }
 
     // Generate tokens
@@ -221,8 +242,7 @@ export class AuthService {
     });
 
     if (!user) {
-      // Don't reveal if user exists
-      return { message: 'If your email is registered, you will receive a password reset link.' };
+      throw new AppError('This email is not registered. Please sign up to create an account.', 404);
     }
 
     // Generate reset token
@@ -237,12 +257,22 @@ export class AuthService {
       },
     });
 
-    // TODO: Send email with reset token
-    // await emailService.sendPasswordResetEmail(user.email, resetToken);
+    // Send password reset email
+    try {
+      console.log('[AuthService] Attempting to send password reset email to:', user.email);
+      await emailService.sendPasswordResetEmail(
+        user.email,
+        resetToken,
+        user.firstName
+      );
+      console.log('[AuthService] Password reset email sent successfully');
+    } catch (error: any) {
+      console.error('[AuthService] Failed to send password reset email:', error);
+      throw new AppError(`Failed to send password reset email: ${error.message}`, 500);
+    }
 
     return {
-      message: 'If your email is registered, you will receive a password reset link.',
-      resetToken, // Remove this in production
+      message: 'Password reset link has been sent to your email.',
     };
   }
 

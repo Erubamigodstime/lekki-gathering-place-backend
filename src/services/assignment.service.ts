@@ -5,6 +5,15 @@ const prisma = new PrismaClient();
 
 export class AssignmentService {
   /**
+   * Get student by user ID
+   */
+  async getStudentByUserId(userId: string) {
+    return await prisma.student.findUnique({
+      where: { userId },
+    });
+  }
+
+  /**
    * Create a new assignment for a lesson
    */
   async create(data: CreateAssignmentDTO): Promise<Assignment> {
@@ -167,7 +176,7 @@ export class AssignmentService {
 
     return assignments.map(assignment => ({
       ...assignment,
-      latestSubmission: assignment.submissions[0] || null,
+      submission: assignment.submissions[0] || null, // Frontend expects 'submission' not 'latestSubmission'
       submissions: undefined, // Remove the array, keep only latest
     }));
   }

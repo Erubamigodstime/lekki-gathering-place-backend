@@ -7,6 +7,7 @@ import { ResponseUtil } from '@/utils/response.util';
 import { asyncHandler } from '@/middleware/error.middleware';
 import { upload } from '@/middleware/upload.middleware';
 import { uploadToCloudinary } from '@/config/cloudinary';
+import { PaginationUtil } from '@/utils/pagination.util';
 
 const router = Router();
 
@@ -21,7 +22,8 @@ router.get(
   '/',
   authenticate,
   asyncHandler(async (req, res) => {
-    const { status } = req.query;
+    const { status, page = '1', limit = '50' } = req.query;
+    const { skip, take } = PaginationUtil.getSkipTake(parseInt(page as string), parseInt(limit as string));
 
     console.log('GET /instructors called with status:', status);
 
@@ -30,29 +32,34 @@ router.get(
 
     console.log('Query where clause:', where);
 
-    const instructors = await prisma.instructor.findMany({
-      where,
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            profilePicture: true,
-            wardId: true,
-            ward: true,
+    const [instructors, total] = await Promise.all([
+      prisma.instructor.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+              profilePicture: true,
+              wardId: true,
+              ward: true,
+            },
+          },
+          _count: {
+            select: {
+              classes: true,
+            },
           },
         },
-        _count: {
-          select: {
-            classes: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.instructor.count({ where }),
+    ]);
 
     console.log('Found instructors:', instructors.length);
     console.log('Instructor details:', instructors.map(i => ({
@@ -61,7 +68,14 @@ router.get(
       approvalStatus: i.approvalStatus
     })));
 
-    ResponseUtil.success(res, 'Instructors retrieved successfully', instructors);
+    const paginatedResponse = PaginationUtil.createPaginatedResponse(
+      instructors,
+      total,
+      parseInt(page as string),
+      parseInt(limit as string)
+    );
+
+    ResponseUtil.success(res, 'Instructors retrieved successfully', paginatedResponse);
   })
 );
 

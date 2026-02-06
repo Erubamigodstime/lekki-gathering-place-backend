@@ -23,6 +23,9 @@ router.get('/class/:classId/distribution', gradeController.getGradeDistribution)
 // Bulk publish grades
 router.post('/bulk-publish', gradeController.bulkPublishGrades);
 
+// Publish all pending grades for a class
+router.post('/class/:classId/publish-all', gradeController.publishAllClassGrades);
+
 // Create a new grade
 router.post('/', validateRequest(createGradeSchema), gradeController.create);
 

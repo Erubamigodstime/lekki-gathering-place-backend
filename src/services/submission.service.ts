@@ -5,6 +5,15 @@ const prisma = new PrismaClient();
 
 export class SubmissionService {
   /**
+   * Get student by user ID
+   */
+  async getStudentByUserId(userId: string) {
+    return await prisma.student.findUnique({
+      where: { userId },
+    });
+  }
+
+  /**
    * Create a new submission (or save as draft)
    */
   async create(data: CreateSubmissionDTO): Promise<Submission> {

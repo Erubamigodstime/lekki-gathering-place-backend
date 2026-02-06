@@ -6,6 +6,7 @@ import prisma from '@/config/database';
 import { ResponseUtil } from '@/utils/response.util';
 import { asyncHandler } from '@/middleware/error.middleware';
 import { AppError } from '@/middleware/error.middleware';
+import { PaginationUtil } from '@/utils/pagination.util';
 
 const router = Router();
 
@@ -164,7 +165,8 @@ router.get(
   authorize(UserRole.ADMIN, UserRole.INSTRUCTOR),
   asyncHandler(async (req, res) => {
     const { classId } = req.params;
-    const { status, startDate, endDate } = req.query;
+    const { status, startDate, endDate, page = '1', limit = '50' } = req.query;
+    const { skip, take } = PaginationUtil.getSkipTake(parseInt(page as string), parseInt(limit as string));
 
     const where: any = { classId };
     if (status) where.status = status;
@@ -174,27 +176,39 @@ router.get(
       if (endDate) where.date.lte = new Date(endDate as string);
     }
 
-    const attendance = await prisma.attendance.findMany({
-      where,
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                profilePicture: true,
+    const [attendance, total] = await Promise.all([
+      prisma.attendance.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          student: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  profilePicture: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: [{ date: 'desc' }, { markedAt: 'desc' }],
-    });
+        orderBy: [{ date: 'desc' }, { markedAt: 'desc' }],
+      }),
+      prisma.attendance.count({ where }),
+    ]);
 
-    ResponseUtil.success(res, 'Attendance retrieved successfully', attendance);
+    const paginatedResponse = PaginationUtil.createPaginatedResponse(
+      attendance,
+      total,
+      parseInt(page as string),
+      parseInt(limit as string)
+    );
+
+    ResponseUtil.success(res, 'Attendance retrieved successfully', paginatedResponse);
   })
 );
 
@@ -212,7 +226,8 @@ router.get(
   authenticate,
   authorize(UserRole.ADMIN, UserRole.INSTRUCTOR),
   asyncHandler(async (req, res) => {
-    const { status, startDate, endDate, classId, wardId, groupBy } = req.query;
+    const { status, startDate, endDate, classId, wardId, groupBy, page = '1', limit = '50' } = req.query;
+    const { skip, take } = PaginationUtil.getSkipTake(parseInt(page as string), parseInt(limit as string));
     const currentUser = req.user!;
 
     const where: any = {};
@@ -247,44 +262,68 @@ router.get(
       }
     }
 
-    const attendance = await prisma.attendance.findMany({
-      where,
-      include: {
-        class: {
-          include: {
-            instructor: {
-              include: {
-                user: {
-                  select: {
-                    firstName: true,
-                    lastName: true,
+    const [attendance, total] = await Promise.all([
+      prisma.attendance.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          class: {
+            select: {
+              id: true,
+              name: true,
+              instructor: {
+                select: {
+                  user: {
+                    select: {
+                      firstName: true,
+                      lastName: true,
+                    }
                   }
                 }
+              },
+              ward: {
+                select: {
+                  id: true,
+                  name: true,
+                }
               }
-            },
-            ward: true
-          }
-        },
-        student: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-                phone: true,
-                profilePicture: true,
-                ward: true
+            }
+          },
+          student: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  phone: true,
+                  profilePicture: true,
+                  ward: {
+                    select: {
+                      id: true,
+                      name: true,
+                    }
+                  }
+                },
               },
             },
           },
         },
-      },
-      orderBy: { date: 'desc' },
-    });
+        orderBy: { date: 'desc' },
+      }),
+      prisma.attendance.count({ where }),
+    ]);
 
-    ResponseUtil.success(res, 'Attendance retrieved successfully', attendance);
+    const paginatedResponse = PaginationUtil.createPaginatedResponse(
+      attendance,
+      total,
+      parseInt(page as string),
+      parseInt(limit as string)
+    );
+
+    ResponseUtil.success(res, 'Attendance retrieved successfully', paginatedResponse);
   })
 );
 

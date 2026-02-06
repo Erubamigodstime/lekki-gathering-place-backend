@@ -6,6 +6,7 @@ import { redisClient } from './config/redis';
 import { KeepAliveUtil } from './utils/keep-alive.util';
 import socketService from './config/socket';
 import { createServer } from 'http';
+import { messageQueueService } from './services/messageQueue.service';
 
 const PORT = config.port;
 
@@ -16,6 +17,10 @@ const gracefulShutdown = async (signal: string) => {
   try {
     // Stop keep-alive service
     KeepAliveUtil.stop();
+
+    // Close message queue
+    await messageQueueService.close();
+    logger.info('Message queue closed');
 
     // Disconnect from database
     await prisma.$disconnect();
@@ -72,6 +77,15 @@ const startServer = async () => {
     } catch (error) {
       logger.error('Failed to initialize Socket.io:', error);
       logger.warn('Continuing without Socket.io...');
+    }
+
+    // Initialize message queue (after server setup, non-blocking)
+    try {
+      await messageQueueService.initialize();
+      logger.info('Message queue service initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize message queue:', error);
+      logger.warn('Continuing without message queue (WebSocket-only messaging)...');
     }
 
     // Start HTTP server

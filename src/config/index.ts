@@ -18,13 +18,15 @@ export const config = {
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key',
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-refresh-secret',
-    expiresIn: process.env.JWT_EXPIRES_IN || '15m',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+    expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   },
 
-  // CORS
+  // CORS - supports multiple origins (comma-separated)
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: process.env.CORS_ORIGIN?.includes(',')
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : (process.env.CORS_ORIGIN || 'http://localhost:5173'),
     credentials: true,
   },
 
@@ -35,7 +37,7 @@ export const config = {
     password: process.env.REDIS_PASSWORD || undefined,
   },
 
-  // Email
+  // Email (Legacy - for future SMTP use)
   email: {
     service: process.env.EMAIL_SERVICE || 'smtp',
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -43,6 +45,19 @@ export const config = {
     user: process.env.EMAIL_USER || '',
     password: process.env.EMAIL_PASSWORD || '',
     from: process.env.EMAIL_FROM || 'noreply@lekkigatheringplace.org',
+  },
+
+  // SendGrid (Primary Email Service)
+  sendgrid: {
+    apiKey: process.env.SENDGRID_API_KEY || '',
+    fromEmail: process.env.SENDGRID_FROM_EMAIL || '',
+    fromName: process.env.SENDGRID_FROM_NAME || 'Lekki Gathering Place',
+  },
+
+  // App URLs
+  app: {
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:8080',
+    backendUrl: process.env.BACKEND_URL || 'http://localhost:5000',
   },
 
   // Cloudinary

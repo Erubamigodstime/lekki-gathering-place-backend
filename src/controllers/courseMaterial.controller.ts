@@ -43,7 +43,7 @@ export const createCourseMaterial = async (
     }
 
     // Check if user is the instructor of this class
-    if (lesson.class.instructorId !== req.user?.id && req.user?.role !== 'ADMIN') {
+    if (lesson.class.instructor?.userId !== req.user?.id && req.user?.role !== 'ADMIN') {
       throw new AppError('Only the class instructor can add materials to lessons', 403);
     }
 
@@ -138,7 +138,7 @@ export const deleteCourseMaterial = async (
     }
 
     // Check if user is the instructor of this class
-    if (material.lesson.class.instructorId !== req.user?.id && req.user?.role !== 'ADMIN') {
+    if (material.lesson.class.instructor?.userId !== req.user?.id && req.user?.role !== 'ADMIN') {
       throw new AppError('Only the class instructor can delete materials', 403);
     }
 
