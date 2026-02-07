@@ -4,8 +4,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    rootDir: .
-    buildCommand: npm ci && npm run build && ls -la dist
+    buildCommand: npm ci && npm run build
     startCommand: node dist/server.js
     healthCheckPath: /api/v1/health
     envVars:
