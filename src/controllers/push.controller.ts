@@ -4,7 +4,8 @@
  * Handles push notification subscription management
  */
 
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
+import { Request } from 'express';
 import pushNotificationService from '../services/push.service';
 import { ResponseUtil } from '../utils/response.util';
 
