@@ -7,6 +7,7 @@ import { ResponseUtil } from '@/utils/response.util';
 import { asyncHandler } from '@/middleware/error.middleware';
 import { AppError } from '@/middleware/error.middleware';
 import { PaginationUtil } from '@/utils/pagination.util';
+import progressService from '@/services/progress.service';
 
 const router = Router();
 
@@ -24,8 +25,13 @@ router.post(
   authenticate,
   authorize(UserRole.STUDENT),
   asyncHandler(async (req: Request, res: Response) => {
-    const { classId, notes } = req.body;
+    const { classId, notes, date } = req.body;
     const userId = req.user!.id;
+
+    // Validate required fields
+    if (!classId) {
+      throw new AppError('classId is required', 400);
+    }
 
     const student = await prisma.student.findUnique({
       where: { userId },
@@ -35,12 +41,19 @@ router.post(
       return ResponseUtil.notFound(res, 'Student profile not found');
     }
 
-    // Check if enrolled in the class
+    // Check if enrolled in the class and get class schedule
     const enrollment = await prisma.enrollment.findUnique({
       where: {
         classId_studentId: {
           classId,
           studentId: student.id,
+        },
+      },
+      include: {
+        class: {
+          select: {
+            schedule: true,
+          },
         },
       },
     });
@@ -49,22 +62,31 @@ router.post(
       throw new AppError('You are not enrolled in this class', 403);
     }
 
-    // Check if attendance already marked for today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Use provided date or default to today
+    const attendanceDate = date ? new Date(date) : new Date();
+    attendanceDate.setHours(0, 0, 0, 0);
 
+    // Validate the date is a valid class day
+    const schedule = enrollment.class.schedule as { days?: string[] } | null;
+    const scheduleDays = schedule?.days || ['Thursday'];
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const attendanceDayName = dayNames[attendanceDate.getDay()];
+    
+    if (!scheduleDays.includes(attendanceDayName)) {
+      throw new AppError(`Invalid date: ${attendanceDayName} is not a scheduled class day. Class meets on: ${scheduleDays.join(', ')}`, 400);
+    }
+
+    // Check if attendance already marked for this specific date
     const existingAttendance = await prisma.attendance.findFirst({
       where: {
         classId,
         studentId: student.id,
-        date: {
-          gte: today,
-        },
+        date: attendanceDate,
       },
     });
 
     if (existingAttendance) {
-      throw new AppError('Attendance already marked for today', 409);
+      throw new AppError('Attendance already marked for this date', 409);
     }
 
     const attendance = await prisma.attendance.create({
@@ -72,6 +94,7 @@ router.post(
         classId,
         studentId: student.id,
         notes,
+        date: attendanceDate,
       },
       include: {
         class: true,
@@ -89,6 +112,69 @@ router.post(
     });
 
     ResponseUtil.created(res, 'Attendance marked successfully', attendance);
+  })
+);
+
+/**
+ * @swagger
+ * /attendance/unmark:
+ *   delete:
+ *     summary: Unmark/remove attendance (Student)
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     description: Allows students to remove their pending attendance for a specific date
+ */
+router.delete(
+  '/unmark',
+  authenticate,
+  authorize(UserRole.STUDENT),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { classId, date } = req.body;
+    const userId = req.user!.id;
+
+    // Validate required fields
+    if (!classId) {
+      throw new AppError('classId is required', 400);
+    }
+    if (!date) {
+      throw new AppError('date is required', 400);
+    }
+
+    const student = await prisma.student.findUnique({
+      where: { userId },
+    });
+
+    if (!student) {
+      return ResponseUtil.notFound(res, 'Student profile not found');
+    }
+
+    // Find the attendance record for this date
+    const attendanceDate = new Date(date);
+    attendanceDate.setHours(0, 0, 0, 0);
+
+    const existingAttendance = await prisma.attendance.findFirst({
+      where: {
+        classId,
+        studentId: student.id,
+        date: attendanceDate,
+      },
+    });
+
+    if (!existingAttendance) {
+      return ResponseUtil.notFound(res, 'Attendance record not found for this date');
+    }
+
+    // Only allow unmarking if status is still PENDING
+    if (existingAttendance.status !== 'PENDING') {
+      throw new AppError('Cannot unmark attendance that has already been approved or rejected', 403);
+    }
+
+    await prisma.attendance.delete({
+      where: { id: existingAttendance.id },
+    });
+
+    ResponseUtil.success(res, 'Attendance unmarked successfully');
   })
 );
 
@@ -234,8 +320,15 @@ router.get(
     if (status) where.status = status;
     if (classId) where.classId = classId;
     
+    // For PENDING status, only show current or past dates (hide future dates from instructor queue)
+    if (status === 'PENDING') {
+      const today = new Date();
+      today.setHours(23, 59, 59, 999); // End of today
+      where.date = { ...(where.date || {}), lte: today };
+    }
+    
     if (startDate || endDate) {
-      where.date = {};
+      where.date = where.date || {};
       if (startDate) where.date.gte = new Date(startDate as string);
       if (endDate) where.date.lte = new Date(endDate as string);
     }
@@ -518,6 +611,17 @@ router.patch(
         class: true,
       },
     });
+
+    // Update certificate progress when attendance is approved or rejected
+    try {
+      await progressService.updateProgressByStudentAndClass(
+        attendance.studentId,
+        attendance.classId
+      );
+    } catch (progressError) {
+      console.error('Failed to update progress after attendance change:', progressError);
+      // Continue anyway - the progress will be calculated on next request
+    }
 
     ResponseUtil.success(res, `Attendance ${status.toLowerCase()} successfully`, attendance);
   })

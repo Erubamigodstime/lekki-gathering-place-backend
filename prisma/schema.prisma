@@ -309,6 +309,12 @@ model Enrollment {
   currentGrade      Float?
   certificateIssued Boolean @default(false)
 
+  // Certificate Completion Tracking (75% attendance + 25% assignment completion)
+  completionProgress        Float?    // Overall completion progress (0-100)
+  attendanceScore           Float?    // Attendance percentage (0-100)
+  assignmentCompletionScore Float?    // Assignment completion percentage (0-100)
+  progressUpdatedAt         DateTime? // Last time progress was calculated
+
   // Canvas LMS relations
   weekProgress WeekProgress[]
   certificate  Certificate?

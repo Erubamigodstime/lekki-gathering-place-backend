@@ -1,5 +1,6 @@
 import { PrismaClient, Submission, SubmissionStatus } from '@prisma/client';
 import { CreateSubmissionDTO, UpdateSubmissionDTO } from '../types';
+import progressService from './progress.service';
 
 const prisma = new PrismaClient();
 
@@ -382,6 +383,13 @@ export class SubmissionService {
   async submit(id: string): Promise<Submission> {
     const submission = await prisma.submission.findUnique({
       where: { id },
+      include: {
+        assignment: {
+          include: {
+            lesson: true,
+          },
+        },
+      },
     });
 
     if (!submission) {
@@ -392,13 +400,26 @@ export class SubmissionService {
       throw new Error('Only draft submissions can be submitted');
     }
 
-    return await prisma.submission.update({
+    const updatedSubmission = await prisma.submission.update({
       where: { id },
       data: {
         status: SubmissionStatus.SUBMITTED,
         submittedAt: new Date(),
       },
     });
+
+    // Update certificate progress after submission
+    try {
+      await progressService.updateProgressByStudentAndClass(
+        submission.studentId,
+        submission.assignment.lesson.classId
+      );
+    } catch (progressError) {
+      console.error('Failed to update progress after submission:', progressError);
+      // Continue anyway - the progress will be calculated on next request
+    }
+
+    return updatedSubmission;
   }
 
   /**

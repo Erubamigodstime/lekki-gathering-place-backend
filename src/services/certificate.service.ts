@@ -1,5 +1,6 @@
 import { PrismaClient, Certificate, CertificateStatus } from '@prisma/client';
 import crypto from 'crypto';
+import progressService from './progress.service';
 
 const prisma = new PrismaClient();
 
@@ -282,17 +283,13 @@ export class CertificateService {
 
   /**
    * Check if student meets completion requirements
+   * Uses the 75% Attendance + 25% Assignment Completion formula
    */
   async checkCompletionRequirements(enrollmentId: string) {
     const enrollment = await prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: {
         class: true,
-        weekProgress: {
-          where: {
-            completed: true,
-          },
-        },
       },
     });
 
@@ -300,32 +297,22 @@ export class CertificateService {
       return { isComplete: false, reason: 'Enrollment not found' };
     }
 
-    // Check if all weeks are completed
-    const totalWeeks = enrollment.class.totalWeeks;
-    const completedWeeks = enrollment.weekProgress.length;
+    // Use the new progress service for the 75/25 formula
+    const eligibility = await progressService.checkEligibility(
+      enrollment.studentId,
+      enrollment.classId
+    );
 
-    if (completedWeeks < totalWeeks) {
-      return {
-        isComplete: false,
-        reason: `Only ${completedWeeks} of ${totalWeeks} weeks completed`,
-      };
-    }
+    // Update cached progress fields
+    await progressService.updateEnrollmentProgress(enrollmentId);
 
-    // Check if grading is enabled and minimum grade is met
-    if (enrollment.class.gradingEnabled) {
-      const minimumGrade = enrollment.class.completionRules
-        ? (enrollment.class.completionRules as any).minimumGrade || 60
-        : 60;
-
-      if (!enrollment.currentGrade || enrollment.currentGrade < minimumGrade) {
-        return {
-          isComplete: false,
-          reason: `Minimum grade of ${minimumGrade}% required (current: ${enrollment.currentGrade || 0}%)`,
-        };
-      }
-    }
-
-    return { isComplete: true, reason: 'All requirements met' };
+    return {
+      isComplete: eligibility.eligible,
+      reason: eligibility.reason,
+      progress: eligibility.progress,
+      breakdown: eligibility.breakdown,
+      minimumRequired: eligibility.minimumRequired,
+    };
   }
 
   /**

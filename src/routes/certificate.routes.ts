@@ -17,6 +17,12 @@ router.use(authMiddleware);
 // Generate a certificate for a completed enrollment
 router.post('/', validateRequest(generateCertificateSchema), certificateController.generate);
 
+// Get certificate eligibility and progress for a student
+router.get('/eligibility', certificateController.getEligibility);
+
+// Get class-wide certificate progress (for instructors)
+router.get('/class-progress/:classId', certificateController.getClassProgress);
+
 // Get certificate by ID
 router.get('/:id', validateRequest(getCertificateByIdSchema), certificateController.getById);
 
