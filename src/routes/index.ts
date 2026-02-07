@@ -20,6 +20,7 @@ import weekProgressRoutes from './weekProgress.routes';
 import courseMaterialRoutes from './courseMaterial.routes';
 import uploadRoutes from './upload.routes';
 import announcementRoutes from './announcement.routes';
+import pushRoutes from './push.routes';
 
 const router = Router();
 
@@ -65,6 +66,7 @@ router.use('/week-progress', weekProgressRoutes);
 router.use('/course-materials', courseMaterialRoutes);
 router.use('/upload', uploadRoutes);
 router.use('/announcements', announcementRoutes);
+router.use('/push', pushRoutes);
 
 export default router;
 

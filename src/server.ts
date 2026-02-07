@@ -7,6 +7,7 @@ import { KeepAliveUtil } from './utils/keep-alive.util';
 import socketService from './config/socket';
 import { createServer } from 'http';
 import { messageQueueService } from './services/messageQueue.service';
+import { initializeReminderScheduler } from './services/reminder.scheduler';
 
 const PORT = config.port;
 
@@ -109,6 +110,9 @@ const startServer = async () => {
 
       // Start keep-alive service (only in production)
       KeepAliveUtil.start();
+
+      // Initialize class reminder scheduler for push notifications
+      initializeReminderScheduler();
     });
 
     // Handle server errors
